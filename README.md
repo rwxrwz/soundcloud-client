@@ -85,6 +85,25 @@ Unofficial app, not affiliated with or endorsed by SoundCloud. It works through 
 
 ---
 
+## 📸 Скриншоты
+
+<table>
+<tr>
+<td width="50%"><b>Главное окно</b><br><img src="docs/main_playlists.jpg" width="100%"></td>
+<td width="50%"><b>Полноэкранный режим с текстом</b><br><img src="docs/fullscreen.png" width="100%"></td>
+</tr>
+<tr>
+<td width="50%"><b>Настройки — эквалайзер, язык, темы</b><br><img src="docs/settings2.png" width="100%"></td>
+<td width="50%"><b>Мини-плеер</b><br><img src="docs/mini_player.png" width="100%"></td>
+</tr>
+<tr>
+<td width="50%"><b>Поиск</b><br><img src="docs/main_search.jpg" width="100%"></td>
+<td width="50%"><b>Экран входа</b><br><img src="docs/log.png" width="100%"></td>
+</tr>
+</table>
+
+---
+
 ## ✨ Уникальные функции клиента
 - Сортировка треков в плейлисте и лайках: сначала новые или сначала старые
 - Вкладка «Релизы» — последние релизы артистов, на которых подписан
