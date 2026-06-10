@@ -17,6 +17,25 @@ A custom player with likes, playlists, follows, a releases feed, synced lyrics, 
 
 ---
 
+## 📸 Screenshots
+
+<table>
+<tr>
+<td width="50%"><b>Main window</b><br><img src="docs/main_playlists.jpg" width="100%"></td>
+<td width="50%"><b>Fullscreen mode with lyrics</b><br><img src="docs/fullscreen.png" width="100%"></td>
+</tr>
+<tr>
+<td width="50%"><b>Settings — equalizer, language, themes</b><br><img src="docs/settings2.png" width="100%"></td>
+<td width="50%"><b>Mini-player</b><br><img src="docs/mini_player.png" width="100%"></td>
+</tr>
+<tr>
+<td width="50%"><b>Search</b><br><img src="docs/main_search.jpg" width="100%"></td>
+<td width="50%"><b>Sign-in screen</b><br><img src="docs/log.png" width="100%"></td>
+</tr>
+</table>
+
+---
+
 ## ✨ Standout features
 - Sort tracks in a playlist and likes: newest first or oldest first
 - "Releases" tab — latest releases from the artists you follow
