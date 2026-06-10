@@ -36,7 +36,7 @@ A custom player with likes, playlists, follows, a releases feed, synced lyrics, 
 
 ---
 
-## ✨ Standout features
+## ✨ Unique features
 - Sort tracks in a playlist and likes: newest first or oldest first
 - "Releases" tab — latest releases from the artists you follow
 - Synced lyrics with line-by-line time highlighting (LRCLIB)
