@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, safeStorage } from 'electron'
 import { join } from 'path'
+import { writeFileSync, readFileSync, existsSync, unlinkSync } from 'fs'
 import { Client } from '@xhayper/discord-rpc'
 
 const ICON_PATH = join(__dirname, '../../buildResources/icon_rounded.ico')
@@ -91,8 +92,19 @@ function createMainWindow(): void {
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    // Only hand off real web links to the OS browser — never file:, etc.
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // Defense-in-depth (webSecurity is off): never let the shell window navigate
+  // away from the bundled app. External links go through the handler above.
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    const isLocal = url.startsWith('file://') || (!!process.env.ELECTRON_RENDERER_URL && url.startsWith(process.env.ELECTRON_RENDERER_URL))
+    if (!isLocal) {
+      e.preventDefault()
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+    }
   })
 
   // Minimize behaves normally (to taskbar). Only close hides to tray.
@@ -129,9 +141,15 @@ function createMiniWindow(): void {
       preload: join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false
+      // Mini window only renders IPC-fed state + artwork images — no cross-origin
+      // fetches — so web security can stay on here.
+      webSecurity: true
     }
   })
+  // Keep the mini-player pinned above everything — including fullscreen apps —
+  // and present on every virtual desktop.
+  miniWindow.setAlwaysOnTop(true, 'screen-saver')
+  miniWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   const url = process.env.ELECTRON_RENDERER_URL
     ? `${process.env.ELECTRON_RENDERER_URL}#mini`
     : `file://${join(__dirname, '../../out/renderer/index.html')}#mini`
@@ -211,7 +229,9 @@ async function ensureScProxy(): Promise<BrowserWindow> {
   if (scProxy && !scProxy.isDestroyed()) return scProxy
   scProxy = new BrowserWindow({
     show: false,
-    webPreferences: { nodeIntegration: false, contextIsolation: false }
+    // contextIsolation can stay on: write/get requests run via executeJavaScript
+    // in the page's main world, which is unaffected by isolation.
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
   })
   await scProxy.loadURL('https://soundcloud.com')
   scProxy.on('closed', () => { scProxy = null })
@@ -251,13 +271,44 @@ ipcMain.handle('sc-get', async (_, url: string, oauthToken: string) => {
     (async () => {
       const res = await fetch(${JSON.stringify(url)}, {
         credentials: 'include',
-        headers: { 'Authorization': 'OAuth ${oauthToken}' }
+        headers: { 'Authorization': ${JSON.stringify('OAuth ' + oauthToken)} }
       })
       if (!res.ok) throw new Error('HTTP ' + res.status)
       return res.json()
     })()
   `
   return proxy.webContents.executeJavaScript(code)
+})
+
+// ── Secure token storage (OS keychain via safeStorage) ──────────────────────
+// Keeps the OAuth token out of localStorage; encrypted at rest with DPAPI/keychain.
+const tokenFile = () => join(app.getPath('userData'), 'sc-token.bin')
+
+ipcMain.handle('secure-set-token', (_, token: string) => {
+  try {
+    if (!token) {
+      if (existsSync(tokenFile())) unlinkSync(tokenFile())
+      return true
+    }
+    if (safeStorage.isEncryptionAvailable()) {
+      writeFileSync(tokenFile(), safeStorage.encryptString(token))
+      return true
+    }
+    // No OS keychain available — refuse to write the token to disk in the clear.
+    // It stays in memory for this session; the user re-authenticates next launch.
+    if (existsSync(tokenFile())) unlinkSync(tokenFile())
+    return false
+  } catch { return false }
+})
+
+ipcMain.handle('secure-get-token', () => {
+  try {
+    if (!existsSync(tokenFile())) return ''
+    const buf = readFileSync(tokenFile())
+    if (buf.subarray(0, 6).toString('utf8') === 'plain:') return buf.subarray(6).toString('utf8')
+    if (safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(buf)
+    return ''
+  } catch { return '' }
 })
 
 ipcMain.handle('open-mini-player', () => createMiniWindow())

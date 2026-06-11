@@ -247,8 +247,15 @@ class SoundCloudService {
     await this.scWrite('DELETE', `/me/followings/${artistId}`)
   }
 
-  async getPlaylist(id: number): Promise<SCPlaylist> {
-    return this.get<SCPlaylist>(`/playlists/${id}`)
+  // Create a new playlist. SC v2 expects { playlist: { title, sharing, tracks: [ids] } }.
+  async createPlaylist(title: string, trackIds: number[] = [], sharing: 'public' | 'private' = 'private'): Promise<SCPlaylist> {
+    return this.scWrite('POST', '/playlists', {
+      playlist: { title, sharing, tracks: trackIds }
+    }) as Promise<SCPlaylist>
+  }
+
+  async deletePlaylist(playlistId: number): Promise<void> {
+    await this.scWrite('DELETE', `/playlists/${playlistId}`)
   }
 
   // Replace the full track list of a playlist. API expects plain track IDs.
@@ -272,7 +279,6 @@ class SoundCloudService {
     const ids = (pl.tracks ?? []).map(t => t.id).filter(Boolean).filter(id => id !== trackId)
     await this.setPlaylistTracks(playlistId, ids)
   }
-
 
   async getNextPage<T>(nextHref: string): Promise<SCCollection<T>> {
     const sep = nextHref.includes('?') ? '&' : '?'

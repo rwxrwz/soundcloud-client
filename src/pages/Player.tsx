@@ -24,7 +24,7 @@ export function Player() {
   const { clientId, oauthToken, user } = useProfile()
   const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, showQueue, showSettings } = useUI()
   const { accent, bgStyle } = useSettings()
-  const { isPlaying, setPlaying, currentTrack, progress, duration, volume, setVolume, seekTo } = usePlayer()
+  const { isPlaying, setPlaying, currentTrack, progress, duration, volume, setVolume, seekTo, nextTrack, prevTrack } = usePlayer()
   const accentHex: string = accent === 'artwork'
     ? `#${artRgb.map(v => v.toString(16).padStart(2,'0')).join('')}`
     : (ACCENT_COLORS[accent as keyof typeof ACCENT_COLORS] ?? ACCENT_COLORS.orange)
@@ -79,6 +79,13 @@ export function Player() {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
 
+      // Ctrl/Cmd + ←/→ → previous / next track (works from any of the app's windows)
+      if ((e.ctrlKey || e.metaKey) && (e.code === 'ArrowRight' || e.code === 'ArrowLeft')) {
+        e.preventDefault()
+        e.code === 'ArrowRight' ? nextTrack() : prevTrack()
+        return
+      }
+
       if (e.code === 'Space') {
         e.preventDefault()
         if (!currentTrack) return
@@ -99,7 +106,7 @@ export function Player() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [isPlaying, currentTrack, progress, duration, volume, setPlaying, setVolume, seekTo])
+  }, [isPlaying, currentTrack, progress, duration, volume, setPlaying, setVolume, seekTo, nextTrack, prevTrack])
 
   useEffect(() => {
     const root = document.documentElement

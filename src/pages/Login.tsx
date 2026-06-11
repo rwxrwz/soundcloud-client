@@ -24,6 +24,8 @@ declare global {
       windowMaximize: () => Promise<void>
       windowClose: () => Promise<void>
       setDiscordRpc: (enabled: boolean) => Promise<void>
+      secureSetToken: (token: string) => Promise<boolean>
+      secureGetToken: () => Promise<string>
     }
   }
 }
@@ -57,6 +59,7 @@ export function Login() {
         sc.getMe(),
         new Promise<never>((_, r) => setTimeout(() => r(new Error('Timeout')), 10000))
       ])
+      await window.electronAPI?.secureSetToken?.(result.oauthToken)
       setAuth(result.clientId, result.oauthToken, user)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)

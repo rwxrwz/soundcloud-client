@@ -45,4 +45,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Discord Rich Presence
   setDiscordRpc: (enabled: boolean) => ipcRenderer.invoke('set-discord-rpc', enabled),
+
+  // Secure OAuth token storage (OS keychain via safeStorage)
+  secureSetToken: (token: string) => ipcRenderer.invoke('secure-set-token', token),
+  secureGetToken: () => ipcRenderer.invoke('secure-get-token') as Promise<string>,
 })

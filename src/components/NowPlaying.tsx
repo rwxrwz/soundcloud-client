@@ -318,12 +318,18 @@ function CtrlBtn({ children, onClick, active, accent, title }: {
     <button
       onClick={onClick}
       title={title}
-      className="p-2 rounded-lg transition-all duration-150 active:scale-90"
+      className="relative p-2 rounded-lg transition-all duration-150 active:scale-90"
       style={{ color: active ? (accent ?? 'var(--accent)') : 'rgba(255,255,255,0.4)' }}
       onMouseEnter={e => !active && ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)')}
       onMouseLeave={e => !active && ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)')}
     >
       {children}
+      {active && (
+        <span
+          className="absolute left-1/2 -translate-x-1/2 rounded-full"
+          style={{ bottom: 1, width: 3, height: 3, background: accent ?? 'var(--accent)' }}
+        />
+      )}
     </button>
   )
 }

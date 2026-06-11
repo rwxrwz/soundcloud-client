@@ -1,14 +1,17 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useProfile, useUI, useLyrics } from '../store'
+import { useProfile, useUI, useLyrics, useToast } from '../store'
 import { sc, SCTrack, SCPlaylist } from '../services/soundcloud'
 import { playlistCache, hydratingSet } from '../services/playlistCache'
 import { checkTracksLyrics } from '../services/lyrics'
 import { TrackCard } from './TrackCard'
+import { CreatePlaylistModal } from './CreatePlaylistModal'
+import { ConfirmDialog } from './ConfirmDialog'
 import { useT } from '../i18n'
 
 export function TrackList() {
-  const { likes, stream, playlists, releases, setReleases, user } = useProfile()
+  const { likes, stream, playlists, releases, setReleases, setPlaylists, user } = useProfile()
   const { page, selectedPlaylist, searchQuery, searchResults, setSearch, setSearchResults, setSelectedPlaylist, backFromPlaylist, trackOrder, setTrackOrder } = useUI()
+  const { show: showToast } = useToast()
   const [searching, setSearching] = useState(false)
   const [loadingReleases, setLoadingReleases] = useState(false)
   const [listKey, setListKey] = useState(0)
@@ -21,6 +24,30 @@ export function TrackList() {
   const markLyrics = useLyrics(s => s.mark)
   const [scanning, setScanning] = useState(false)
   const scanCancelRef = useRef(false)
+  const [showCreatePlaylist, setShowCreatePlaylist] = useState(false)
+  const [showDeletePlaylist, setShowDeletePlaylist] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+
+  const handleDeletePlaylist = async () => {
+    if (!selectedPlaylist || deleteBusy) return
+    setDeleteBusy(true)
+    try {
+      await sc.deletePlaylist(selectedPlaylist.id)
+      playlistCache.delete(selectedPlaylist.id)
+      showToast(t('playlistDeleted'), 'success')
+      setShowDeletePlaylist(false)
+      backFromPlaylist()
+      if (user) {
+        try { const res = await sc.getPlaylists(user.id); setPlaylists(res.collection) }
+        catch { /* list refreshes on next sync */ }
+      }
+    } catch (e) {
+      console.error('[DeletePlaylist] failed:', e)
+      showToast(t('deletePlaylistErr'), 'error')
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
 
   // Hydrate a single playlist and store in cache
   const hydratePlaylist = (playlist: SCPlaylist) => {
@@ -129,12 +156,37 @@ export function TrackList() {
   if (page === 'playlists') {
     return (
       <div key="playlists" className="flex-1 flex flex-col overflow-hidden page-enter">
-        <SectionHeader title={t('playlists')} sub={`${playlists.length}`} />
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
-          <div className="grid grid-cols-2 gap-3 stagger">
-            {playlists.map(pl => <PlaylistCard key={pl.id} playlist={pl} onClick={() => setSelectedPlaylist(pl)} />)}
-            {playlists.length === 0 && <Empty text={t('noPlaylistsYet')} />}
+        <div className="px-5 pt-5 pb-3 shrink-0 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-white">{t('playlists')}</h1>
+            <p className="text-xs text-white/35 mt-0.5">{playlists.length}</p>
           </div>
+          <button
+            onClick={() => setShowCreatePlaylist(true)}
+            title={t('newPlaylist')}
+            className="flex items-center gap-1.5 px-3 h-9 rounded-xl shrink-0 text-sm font-medium transition-all"
+            style={{ color: '#fff', background: 'var(--accent)' }}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            {t('newPlaylist')}
+          </button>
+        </div>
+        {showCreatePlaylist && (
+          <CreatePlaylistModal
+            onClose={() => setShowCreatePlaylist(false)}
+            onCreated={pl => setSelectedPlaylist(pl)}
+          />
+        )}
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
+          {playlists.length === 0 ? (
+            <Empty text={t('noPlaylistsYet')} />
+          ) : (
+            <div className="grid grid-cols-2 gap-3 stagger">
+              {playlists.map(pl => <PlaylistCard key={pl.id} playlist={pl} onClick={() => setSelectedPlaylist(pl)} />)}
+            </div>
+          )}
         </div>
       </div>
     )
@@ -229,6 +281,22 @@ export function TrackList() {
           </button>
         )}
 
+        {/* Delete playlist */}
+        {page === 'playlist-detail' && !filterOpen && (
+          <button
+            onClick={() => setShowDeletePlaylist(true)}
+            title={t('deletePlaylist')}
+            className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#f87171'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)'}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+            </svg>
+          </button>
+        )}
+
         {/* Scan lyrics */}
         {tracks.length > 0 && !filterOpen && page !== 'search' && (
           <button
@@ -259,6 +327,20 @@ export function TrackList() {
         )}
       </div>
 
+      {showDeletePlaylist && (
+        <ConfirmDialog
+          message={t('deletePlaylistConfirm')}
+          confirmLabel={t('delete')}
+          cancelLabel={t('cancel')}
+          danger
+          busy={deleteBusy}
+          requireText={selectedPlaylist?.title}
+          requireTextLabel={t('typeNameToConfirm')}
+          onConfirm={handleDeletePlaylist}
+          onCancel={() => setShowDeletePlaylist(false)}
+        />
+      )}
+
       {/* List */}
       <div className="flex-1 overflow-y-auto px-3 pb-3">
         {searching || (page === 'releases' && loadingReleases && releases.length === 0) ? (
@@ -274,15 +356,6 @@ export function TrackList() {
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function SectionHeader({ title, sub }: { title: string; sub?: string }) {
-  return (
-    <div className="px-5 pt-5 pb-3 shrink-0">
-      <h1 className="text-xl font-bold text-white">{title}</h1>
-      {sub && <p className="text-xs text-white/35 mt-0.5">{sub}</p>}
     </div>
   )
 }

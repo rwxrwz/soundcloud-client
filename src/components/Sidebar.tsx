@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { useProfile, useUI, useSettings, ACCENT_COLORS } from '../store'
 import { SettingsPanel } from './SettingsPanel'
 import { useT } from '../i18n'
-import logo from '../assets/logo.png'
+import logo from '../assets/logo_sidebar.png'
 
 const NAV = [
   { id: 'stream'    as const, key: 'stream'    as const, icon: StreamIcon },
@@ -63,9 +63,8 @@ export function Sidebar() {
         {/* Logo / drag region */}
         <div className="px-4 pt-4 pb-3 drag-region">
           <div className="flex items-center gap-2.5 no-drag">
-            <div className="w-7 h-7 rounded-full overflow-hidden shadow-lg shrink-0"
-              style={{ boxShadow: `0 0 10px rgba(var(--accent-rgb), 0.4)` }}>
-              <img src={logo} alt="" className="w-full h-full object-cover" />
+            <div className="w-7 h-7 shrink-0">
+              <img src={logo} alt="" className="w-full h-full object-contain" />
             </div>
             <span className="font-semibold text-sm text-white/80">SoundCloud</span>
           </div>

@@ -186,7 +186,10 @@ export const useProfile = create<ProfileState>()(
       setFollowingIds: (followingIds) => set({ followingIds }),
       followOptimistic: (id) => set(s => (s.followingIds.includes(id) ? s : { followingIds: [...s.followingIds, id] })),
       unfollowOptimistic: (id) => set(s => ({ followingIds: s.followingIds.filter(x => x !== id) })),
-      logout: () => set({ user: null, clientId: '', oauthToken: '', likes: [], playlists: [], stream: [], releases: [], followingIds: [] }),
+      logout: () => {
+        try { window.electronAPI?.secureSetToken?.('') } catch { /* ignore */ }
+        set({ user: null, clientId: '', oauthToken: '', likes: [], playlists: [], stream: [], releases: [], followingIds: [] })
+      },
       likeTrackOptimistic: (track) => set(s => ({ likes: [track, ...s.likes] })),
       unlikeTrackOptimistic: (trackId) => set(s => ({ likes: s.likes.filter(t => t.id !== trackId) })),
       updatePlaylistTracks: (playlistId, tracks) => set(s => ({
@@ -197,9 +200,11 @@ export const useProfile = create<ProfileState>()(
     }),
     {
       name: 'sc-profile',
-      // Don't persist `releases` — refetch a fresh feed each session
+      // Don't persist `releases` — refetch a fresh feed each session.
+      // `oauthToken` is intentionally excluded: it lives in the OS keychain
+      // (secure-set-token) and is rehydrated into memory on startup.
       partialize: (s) => ({
-        user: s.user, clientId: s.clientId, oauthToken: s.oauthToken,
+        user: s.user, clientId: s.clientId,
         likes: s.likes, playlists: s.playlists, stream: s.stream,
         followingIds: s.followingIds,
       }),
@@ -207,7 +212,7 @@ export const useProfile = create<ProfileState>()(
   )
 )
 
-export type AccentColor = 'orange' | 'blue' | 'green' | 'pink' | 'purple' | 'red' | 'cyan' | 'yellow' | 'white' | 'indigo' | 'slate' | 'artwork'
+export type AccentColor = 'orange' | 'blue' | 'green' | 'pink' | 'purple' | 'red' | 'cyan' | 'yellow' | 'white' | 'indigo' | 'slate' | 'mauve' | 'artwork'
 export type BgStyle = 'artwork' | 'accent' | 'dark' | 'midnight' | 'aurora'
 export type VisualizerStyle = 'bars' | 'wave' | 'mirror'
 export type Lang = 'ru' | 'en'
@@ -241,7 +246,7 @@ export const useSettings = create<SettingsState>()(
       accent: 'slate',
       bgStyle: 'artwork',
       visualizerStyle: 'bars',
-      lang: 'ru',
+      lang: 'en',
       eq: [0, 0, 0, 0, 0],
       eqEnabled: false,
       discordRpc: false,
@@ -285,6 +290,7 @@ export const ACCENT_COLORS: Record<AccentColor, string> = {
   yellow: '#eab308',
   white:  '#e2e2e2',
   slate:  '#696C85',
+  mauve:  '#AC9CA9',
 }
 
 // Resolves the current accent color, handling the dynamic 'artwork' option.

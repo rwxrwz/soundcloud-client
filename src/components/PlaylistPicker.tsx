@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useProfile, useUI, useToast } from '../store'
 import { sc } from '../services/soundcloud'
 import { playlistCache } from '../services/playlistCache'
+import { CreatePlaylistModal } from './CreatePlaylistModal'
 import { useT } from '../i18n'
 
 export function PlaylistPicker() {
@@ -11,6 +12,7 @@ export function PlaylistPicker() {
   const t = useT()
   const [loading, setLoading] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
 
   const track = playlistPickerTrack
   if (!track) return null
@@ -64,6 +66,14 @@ export function PlaylistPicker() {
   }
 
   return (
+    <>
+    {creating && (
+      <CreatePlaylistModal
+        initialTrackIds={[track.id]}
+        onClose={() => setCreating(false)}
+        onCreated={() => close()}
+      />
+    )}
     <div
       className="fixed inset-0 z-50 flex items-center justify-center playlist-picker-backdrop"
       onClick={e => { if (e.target === e.currentTarget) close() }}
@@ -97,6 +107,22 @@ export function PlaylistPicker() {
 
         {/* Playlist list */}
         <div className="max-h-64 overflow-y-auto py-1.5">
+          {/* Create a new playlist seeded with this track */}
+          <button
+            onClick={() => setCreating(true)}
+            className="w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-150 text-left"
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+          >
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: 'rgba(var(--accent-rgb),0.15)' }}>
+              <svg className="w-4 h-4" style={{ color: 'var(--accent)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </div>
+            <p className="text-sm font-medium" style={{ color: 'var(--accent)' }}>{t('newPlaylist')}</p>
+          </button>
+
           {playlists.length === 0 && (
             <p className="text-xs text-white/30 text-center py-6">{t('noPlaylists')}</p>
           )}
@@ -160,5 +186,6 @@ export function PlaylistPicker() {
         </div>
       </div>
     </div>
+    </>
   )
 }

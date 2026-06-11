@@ -67,6 +67,17 @@ export function MiniPlayer() {
   const ctrl = (type: string, payload?: unknown) =>
     window.electronAPI?.playerControl({ type, payload })
 
+  // Ctrl/Cmd + ←/→ → previous / next track, even when the mini-player is focused
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      if (e.code === 'ArrowRight') { e.preventDefault(); ctrl('next') }
+      else if (e.code === 'ArrowLeft') { e.preventDefault(); ctrl('prev') }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const art = ps.currentTrack?.artwork_url?.replace('-large', '-t200x200') ?? null
 
   // Preload artwork: keep the previous image until the new one is fully loaded,
