@@ -27,7 +27,7 @@ export function MiniPlayer() {
   const t = useT()
   const accentHex = accent === 'artwork' && ps.artRgb
     ? `#${ps.artRgb.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('')}`
-    : (ACCENT_COLORS[accent] ?? ACCENT_COLORS.orange)
+    : (ACCENT_COLORS[accent as keyof typeof ACCENT_COLORS] ?? ACCENT_COLORS.orange)
 
   // Transparent body so backdrop-filter sees the desktop behind
   // mini-mode enables drag on the whole window (CSS class)

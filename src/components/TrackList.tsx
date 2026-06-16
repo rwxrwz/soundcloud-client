@@ -5,11 +5,15 @@ import { playlistCache, hydratingSet } from '../services/playlistCache'
 import { checkTracksLyrics } from '../services/lyrics'
 import { TrackCard } from './TrackCard'
 import { CreatePlaylistModal } from './CreatePlaylistModal'
+import { ImportPlaylistModal } from './ImportPlaylistModal'
 import { ConfirmDialog } from './ConfirmDialog'
+import { MainPage } from './MainPage'
+import { encodePlaylist } from '../services/playlistShare'
+import { SegmentedTabs } from './SegmentedTabs'
 import { useT } from '../i18n'
 
 export function TrackList() {
-  const { likes, stream, playlists, releases, setReleases, setPlaylists, user } = useProfile()
+  const { likes, stream, playlists, releases, setReleases, setPlaylists, user, localPlaylists, removeLocalPlaylist } = useProfile()
   const { page, selectedPlaylist, searchQuery, searchResults, setSearch, setSearchResults, setSelectedPlaylist, backFromPlaylist, trackOrder, setTrackOrder } = useUI()
   const { show: showToast } = useToast()
   const [searching, setSearching] = useState(false)
@@ -19,17 +23,38 @@ export function TrackList() {
   const [hydrating, setHydrating] = useState(false)
   const [playlistFilter, setPlaylistFilter] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
+  const [searchClosing, setSearchClosing] = useState(false)
+  const [lyricsOnly, setLyricsOnly] = useState(false)
+  const [drmOnly, setDrmOnly] = useState(false)
+  const [artistFilter, setArtistFilter] = useState('')
+  const lyricsMap = useLyrics(s => s.available)
   const filterInputRef = useRef<HTMLInputElement>(null)
   const t = useT()
   const markLyrics = useLyrics(s => s.mark)
+
+  // Animate the playlist search field closed before unmounting it
+  const closeSearch = () => {
+    setSearchClosing(true)
+    setTimeout(() => { setFilterOpen(false); setPlaylistFilter(''); setSearchClosing(false) }, 170)
+  }
   const [scanning, setScanning] = useState(false)
   const scanCancelRef = useRef(false)
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false)
+  const [showImportPlaylist, setShowImportPlaylist] = useState(false)
   const [showDeletePlaylist, setShowDeletePlaylist] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
 
   const handleDeletePlaylist = async () => {
     if (!selectedPlaylist || deleteBusy) return
+    // Local playlists (synthetic negative id) are removed locally, no API call.
+    if (selectedPlaylist.id < 0) {
+      removeLocalPlaylist(selectedPlaylist.id)
+      playlistCache.delete(selectedPlaylist.id)
+      showToast(t('playlistDeleted'), 'success')
+      setShowDeletePlaylist(false)
+      backFromPlaylist()
+      return
+    }
     setDeleteBusy(true)
     try {
       await sc.deletePlaylist(selectedPlaylist.id)
@@ -47,6 +72,15 @@ export function TrackList() {
     } finally {
       setDeleteBusy(false)
     }
+  }
+
+  const handleSharePlaylist = async () => {
+    if (!selectedPlaylist) return
+    const ids = tracks.map(tr => tr.id).filter(Boolean)
+    if (!ids.length) return
+    const code = encodePlaylist(selectedPlaylist.title, ids)
+    try { await navigator.clipboard.writeText(code); showToast(t('codeCopied'), 'success') }
+    catch { showToast(t('deletePlaylistErr'), 'error') }
   }
 
   // Hydrate a single playlist and store in cache
@@ -88,8 +122,9 @@ export function TrackList() {
     return () => clearTimeout(t)
   }, [searchQuery, page])
 
-  // Reset filter when playlist changes
-  useEffect(() => { setPlaylistFilter(''); setFilterOpen(false) }, [selectedPlaylist?.id])
+  // Reset filters when playlist changes
+  useEffect(() => { setPlaylistFilter(''); setFilterOpen(false); setLyricsOnly(false); setDrmOnly(false); setArtistFilter('') }, [selectedPlaylist?.id])
+
 
   // Show playlist tracks
   useEffect(() => {
@@ -132,16 +167,26 @@ export function TrackList() {
   }
 
   const tracks = useMemo(() => {
-    let t = canSort && trackOrder === 'oldest' ? [...rawTracks].reverse() : rawTracks
-    if (page === 'playlist-detail' && playlistFilter.trim()) {
-      const q = playlistFilter.toLowerCase()
-      t = t.filter(tr =>
-        tr.title?.toLowerCase().includes(q) ||
-        tr.user?.username?.toLowerCase().includes(q)
-      )
+    let list = canSort && trackOrder === 'oldest' ? [...rawTracks].reverse() : rawTracks
+    if (page === 'playlist-detail') {
+      if (playlistFilter.trim()) {
+        const q = playlistFilter.toLowerCase()
+        list = list.filter(tr =>
+          tr.title?.toLowerCase().includes(q) ||
+          tr.user?.username?.toLowerCase().includes(q)
+        )
+      }
+      if (artistFilter.trim()) {
+        const aq = artistFilter.toLowerCase()
+        list = list.filter(tr => tr.user?.username?.toLowerCase().includes(aq))
+      }
+      if (lyricsOnly) list = list.filter(tr => lyricsMap[tr.id] === true)
+      if (drmOnly) list = list.filter(tr => sc.isDrm(tr))
     }
-    return t
-  }, [rawTracks, trackOrder, canSort, playlistFilter, page])
+    return list
+  }, [rawTracks, trackOrder, canSort, playlistFilter, page, artistFilter, lyricsOnly, drmOnly, lyricsMap])
+
+  const hasActiveFilter = !!(playlistFilter || artistFilter || lyricsOnly || drmOnly)
 
   const handleScanLyrics = async () => {
     if (scanning) { scanCancelRef.current = true; setScanning(false); return }
@@ -152,6 +197,9 @@ export function TrackList() {
   }
   useEffect(() => () => { scanCancelRef.current = true }, [])
 
+  // ── Home dashboard ──
+  if (page === 'main') return <MainPage />
+
   // ── Playlists grid ──
   if (page === 'playlists') {
     return (
@@ -159,19 +207,32 @@ export function TrackList() {
         <div className="px-5 pt-5 pb-3 shrink-0 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl font-bold text-white">{t('playlists')}</h1>
-            <p className="text-xs text-white/35 mt-0.5">{playlists.length}</p>
+            <p className="text-xs text-white/35 mt-0.5">{localPlaylists.length + playlists.length}</p>
           </div>
-          <button
-            onClick={() => setShowCreatePlaylist(true)}
-            title={t('newPlaylist')}
-            className="flex items-center gap-1.5 px-3 h-9 rounded-xl shrink-0 text-sm font-medium transition-all"
-            style={{ color: '#fff', background: 'var(--accent)' }}
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            {t('newPlaylist')}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowImportPlaylist(true)}
+              title={t('importPlaylist')}
+              className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-medium transition-all"
+              style={{ color: 'rgba(255,255,255,0.7)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+              </svg>
+              {t('import')}
+            </button>
+            <button
+              onClick={() => setShowCreatePlaylist(true)}
+              title={t('newPlaylist')}
+              className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-medium transition-all"
+              style={{ color: '#fff', background: 'var(--accent)' }}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              {t('newPlaylist')}
+            </button>
+          </div>
         </div>
         {showCreatePlaylist && (
           <CreatePlaylistModal
@@ -179,12 +240,18 @@ export function TrackList() {
             onCreated={pl => setSelectedPlaylist(pl)}
           />
         )}
+        {showImportPlaylist && (
+          <ImportPlaylistModal
+            onClose={() => setShowImportPlaylist(false)}
+            onImported={pl => setSelectedPlaylist(pl)}
+          />
+        )}
         <div className="flex-1 overflow-y-auto px-4 pb-4">
-          {playlists.length === 0 ? (
+          {localPlaylists.length + playlists.length === 0 ? (
             <Empty text={t('noPlaylistsYet')} />
           ) : (
-            <div className="grid grid-cols-2 gap-3 stagger">
-              {playlists.map(pl => <PlaylistCard key={pl.id} playlist={pl} onClick={() => setSelectedPlaylist(pl)} />)}
+            <div className="grid gap-3 stagger" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 1fr))' }}>
+              {[...localPlaylists, ...playlists].map(pl => <PlaylistCard key={pl.id} playlist={pl} onClick={() => setSelectedPlaylist(pl)} />)}
             </div>
           )}
         </div>
@@ -228,8 +295,8 @@ export function TrackList() {
               placeholder={`${t('searchInPlaylist')}...`}
               value={playlistFilter}
               onChange={e => setPlaylistFilter(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Escape') { setFilterOpen(false); setPlaylistFilter('') } }}
-              className="w-full rounded-xl px-4 py-2 text-sm text-white focus:outline-none transition-all"
+              onKeyDown={e => { if (e.key === 'Escape') closeSearch() }}
+              className={`w-full rounded-xl px-4 py-2 text-sm text-white focus:outline-none transition-all ${searchClosing ? 'search-out' : 'search-in'}`}
               style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(var(--accent-rgb),0.4)' }}
             />
           ) : (
@@ -256,9 +323,9 @@ export function TrackList() {
           <button
             onClick={() => { setFilterOpen(true); setTimeout(() => filterInputRef.current?.focus(), 0) }}
             className="p-1.5 rounded-lg transition-all shrink-0"
-            style={{ color: playlistFilter ? 'var(--accent)' : 'rgba(255,255,255,0.35)' }}
-            onMouseEnter={e => { if (!playlistFilter) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)' }}
-            onMouseLeave={e => { if (!playlistFilter) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)' }}
+            style={{ color: hasActiveFilter ? 'var(--accent)' : 'rgba(255,255,255,0.35)' }}
+            onMouseEnter={e => { if (!hasActiveFilter) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)' }}
+            onMouseLeave={e => { if (!hasActiveFilter) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)' }}
             title={t('searchInPlaylist')}
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -268,7 +335,7 @@ export function TrackList() {
         )}
         {page === 'playlist-detail' && filterOpen && (
           <button
-            onClick={() => { setFilterOpen(false); setPlaylistFilter('') }}
+            onClick={closeSearch}
             className="p-1.5 rounded-lg transition-all shrink-0"
             style={{ color: 'rgba(255,255,255,0.35)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)'}
@@ -277,6 +344,22 @@ export function TrackList() {
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        )}
+
+        {/* Share playlist (copy code) */}
+        {page === 'playlist-detail' && !filterOpen && tracks.length > 0 && (
+          <button
+            onClick={handleSharePlaylist}
+            title={t('sharePlaylist')}
+            className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)'}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>
             </svg>
           </button>
         )}
@@ -319,13 +402,62 @@ export function TrackList() {
 
         {/* Sort toggle */}
         {canSort && tracks.length > 0 && !filterOpen && (
-          <div className="flex items-center gap-0.5 rounded-lg p-1 shrink-0"
-            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <SortBtn label={t('newest')} active={trackOrder === 'newest'} onClick={() => setTrackOrder('newest')} />
-            <SortBtn label={t('oldest')} active={trackOrder === 'oldest'} onClick={() => setTrackOrder('oldest')} />
+          <div className="shrink-0">
+            <SegmentedTabs
+              size="sm"
+              value={trackOrder}
+              onChange={setTrackOrder}
+              options={[['newest', t('newest')], ['oldest', t('oldest')]]}
+            />
           </div>
         )}
       </div>
+
+      {/* Filter bar */}
+      {page === 'playlist-detail' && filterOpen && (
+        <div className={`px-5 pb-2 flex items-center gap-2 shrink-0 flex-wrap ${searchClosing ? 'search-out' : 'search-in'}`}>
+          <button
+            onClick={() => setLyricsOnly(v => !v)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+            style={{
+              background: lyricsOnly ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.06)',
+              color: lyricsOnly ? 'var(--accent)' : 'rgba(255,255,255,0.55)',
+              border: lyricsOnly ? '1px solid rgba(var(--accent-rgb),0.4)' : '1px solid rgba(255,255,255,0.08)',
+            }}
+          >
+            <span className="inline-flex items-center justify-center text-[8px] font-bold rounded"
+              style={{ width: 13, height: 13, background: 'rgba(255,255,255,0.18)', color: 'rgba(255,255,255,0.85)' }}>L</span>
+            {t('withLyrics')}
+          </button>
+
+          <button
+            onClick={() => setDrmOnly(v => !v)}
+            title={t('drmOnlyHint')}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+            style={{
+              background: drmOnly ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.06)',
+              color: drmOnly ? 'var(--accent)' : 'rgba(255,255,255,0.55)',
+              border: drmOnly ? '1px solid rgba(var(--accent-rgb),0.4)' : '1px solid rgba(255,255,255,0.08)',
+            }}
+          >
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+            {t('drmOnly')}
+          </button>
+
+          <input
+            type="text"
+            placeholder={t('filterArtist')}
+            value={artistFilter}
+            onChange={e => setArtistFilter(e.target.value)}
+            className="px-2.5 py-1 rounded-lg text-xs font-medium focus:outline-none transition-all w-40"
+            style={{
+              background: artistFilter ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.06)',
+              color: artistFilter ? 'var(--accent)' : 'rgba(255,255,255,0.8)',
+              border: artistFilter ? '1px solid rgba(var(--accent-rgb),0.4)' : '1px solid rgba(255,255,255,0.08)',
+            }}
+          />
+        </div>
+      )}
 
       {showDeletePlaylist && (
         <ConfirmDialog
@@ -360,18 +492,6 @@ export function TrackList() {
   )
 }
 
-function SortBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick}
-      className="px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-150"
-      style={{
-        background: active ? 'var(--accent)' : 'transparent',
-        color: active ? '#fff' : 'rgba(255,255,255,0.4)'
-      }}
-    >{label}</button>
-  )
-}
-
 function Empty({ text }: { text: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-3 fade-in">
@@ -388,27 +508,32 @@ function Empty({ text }: { text: string }) {
 
 function PlaylistCard({ playlist, onClick }: { playlist: SCPlaylist; onClick: () => void }) {
   const tt = useT()
+  const setPlaylistMenu = useUI(s => s.setPlaylistMenu)
   const art = (playlist.artwork_url ?? playlist.tracks?.[0]?.artwork_url)?.replace('-large', '-t200x200')
   return (
     <button onClick={onClick}
-      className="text-left p-3 rounded-xl group transition-all duration-200 hover:-translate-y-0.5"
-      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.07)' }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.09)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.12)' }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.07)' }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setPlaylistMenu({ x: e.clientX, y: e.clientY, playlist }) }}
+      className="text-left group transition-all duration-200 hover:-translate-y-0.5"
     >
-      <div className="w-full aspect-square rounded-lg overflow-hidden mb-3" style={{ background: 'rgba(255,255,255,0.05)' }}>
+      <div className="relative w-full aspect-square rounded-xl overflow-hidden mb-2" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}>
         {art ? (
           <img src={art} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <svg className="w-10 h-10 text-white/15" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-9 h-9 text-white/15" fill="currentColor" viewBox="0 0 20 20">
               <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/>
             </svg>
           </div>
         )}
+        {playlist.id < 0 && (
+          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+            style={{ background: 'rgba(0,0,0,0.6)', color: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(4px)' }}>
+            {tt('localBadge')}
+          </span>
+        )}
       </div>
-      <p className="text-sm font-medium truncate text-white/85">{playlist.title}</p>
-      <p className="text-xs text-white/30 mt-0.5">{playlist.track_count} {tt('tracksWord')}</p>
+      <p className="text-xs font-medium truncate text-white/90">{playlist.title}</p>
+      <p className="text-[11px] text-white/35 truncate mt-0.5">{playlist.track_count} {tt('tracksWord')}</p>
     </button>
   )
 }

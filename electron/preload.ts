@@ -46,7 +46,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Discord Rich Presence
   setDiscordRpc: (enabled: boolean) => ipcRenderer.invoke('set-discord-rpc', enabled),
 
+  // System preferences
+  setCloseToTray: (enabled: boolean) => ipcRenderer.invoke('set-close-to-tray', enabled),
+  setLoginItem: (enabled: boolean) => ipcRenderer.invoke('set-login-item', enabled),
+  getLoginItem: () => ipcRenderer.invoke('get-login-item') as Promise<boolean>,
+
   // Secure OAuth token storage (OS keychain via safeStorage)
   secureSetToken: (token: string) => ipcRenderer.invoke('secure-set-token', token),
   secureGetToken: () => ipcRenderer.invoke('secure-get-token') as Promise<string>,
+
+  // Video wallpapers (userData/wallpapers)
+  wallpapersDir: () => ipcRenderer.invoke('wallpapers-dir') as Promise<string>,
+  openWallpapers: () => ipcRenderer.invoke('wallpapers-open'),
+  listWallpapers: () => ipcRenderer.invoke('wallpapers-list') as Promise<{ name: string; path: string }[]>,
 })

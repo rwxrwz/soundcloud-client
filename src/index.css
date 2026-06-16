@@ -11,6 +11,9 @@
 
 * { box-sizing: border-box; -webkit-app-region: no-drag; }
 
+/* No default browser focus outline — the app uses its own hover/active states */
+:focus, :focus-visible { outline: none !important; }
+
 html, body, #root {
   height: 100%;
 }
@@ -67,6 +70,59 @@ canvas { display: block; }
   box-shadow: 0 8px 32px rgba(0,0,0,0.3);
 }
 
+/* ── Theme presets ────────────────────────────────────────────
+   Everything lives under [data-theme="…"] so the unset / "default"
+   theme keeps the original look untouched. Attribute selectors also
+   outrank the base .glass-* rules, so order here doesn't matter.
+   Components read --glass-bg/border/blur inline AND via .glass-*,
+   so retargeting both covers the bulk of the app's surfaces. */
+
+/* Glass — light see-through panels: low overlay + light blur so the wallpaper
+   stays visible through it (heavy blur reads as opaque/frosted, not glass). */
+[data-theme="glass"] {
+  --glass-bg: rgba(255,255,255,0.025);
+  --glass-border: rgba(255,255,255,0.22);
+  --glass-blur: 14px;
+}
+[data-theme="glass"] .glass-island {
+  background: rgba(255,255,255,0.025);
+  backdrop-filter: blur(16px) saturate(160%) brightness(1.06);
+  -webkit-backdrop-filter: blur(16px) saturate(160%) brightness(1.06);
+  border-color: rgba(255,255,255,0.22);
+}
+[data-theme="glass"] .glass-card {
+  background: rgba(255,255,255,0.02);
+  backdrop-filter: blur(12px) saturate(150%) brightness(1.06);
+  -webkit-backdrop-filter: blur(12px) saturate(150%) brightness(1.06);
+  border-color: rgba(255,255,255,0.16);
+}
+[data-theme="glass"] .glass-card:hover {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(255,255,255,0.3);
+}
+/* corners kept identical to default */
+
+/* Minimal — flat, thin borders, small corners, no blur, no shadows */
+[data-theme="minimal"] {
+  --glass-bg: rgba(255,255,255,0.04);
+  --glass-border: rgba(255,255,255,0.10);
+  --glass-blur: 0px;
+}
+[data-theme="minimal"] .glass-island {
+  background: #101014;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  border-color: rgba(255,255,255,0.10);
+  box-shadow: none;
+}
+[data-theme="minimal"] .glass-card {
+  background: #101014;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  border-color: rgba(255,255,255,0.08);
+  box-shadow: none;
+}
+[data-theme="minimal"] .glass-card:hover { background: #16161c; transform: none; box-shadow: none; }
+/* corners kept identical to default */
+
 /* ── Slider ───────────────────────────────────────────────── */
 .slider-wrap {
   position: relative;
@@ -96,6 +152,11 @@ canvas { display: block; }
   to   { opacity: 1; transform: scale(1); }
 }
 .scale-in { animation: scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes scale-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.9); }
+}
 
 @keyframes slide-right {
   from { opacity: 0; transform: translateX(-20px); }
@@ -139,6 +200,23 @@ canvas { display: block; }
 @keyframes eq-bar {
   0%, 100% { transform: scaleY(0.2); }
   50%       { transform: scaleY(1); }
+}
+
+/* Lyrics scroller — hide the scrollbar entirely (no bar, no thumb) */
+.lyrics-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.lyrics-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* Album accordion on the artist page — animates open AND closed via grid rows */
+.album-collapse {
+  display: grid;
+  transition: grid-template-rows 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Hover-preview "now playing" indicator bars */
+.preview-bar {
+  height: 11px;
+  transform-origin: bottom;
+  animation: eq-bar 0.9s ease-in-out infinite;
 }
 
 /* Marquee */
@@ -277,6 +355,57 @@ img { transition: opacity 0.3s ease; }
 .playlist-picker-panel {
   animation: picker-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* ── Overlay EXIT animations (applied via a `closing` class) ─────── */
+@keyframes track-page-backdrop-out {
+  from { background: rgba(0,0,0,0.55); backdrop-filter: blur(20px); }
+  to   { background: rgba(0,0,0,0);    backdrop-filter: blur(0px); }
+}
+@keyframes track-page-panel-out {
+  from { transform: translateY(0); }
+  to   { transform: translateY(100%); }
+}
+.track-page-backdrop.closing { animation: track-page-backdrop-out 0.32s cubic-bezier(0.4, 0, 1, 1) both; }
+.track-page-panel.closing    { animation: track-page-panel-out 0.32s cubic-bezier(0.4, 0, 1, 1) both; }
+
+@keyframes picker-out {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to   { opacity: 0; transform: scale(0.96) translateY(6px); }
+}
+.playlist-picker-backdrop.closing { animation: track-page-backdrop-out 0.22s ease both; }
+.playlist-picker-panel.closing    { animation: picker-out 0.22s ease both; }
+
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+.fade-out { animation: fade-out 0.28s ease both; }
+
+/* Playlist search field reveal */
+@keyframes search-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.search-in { animation: search-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes search-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-10px); }
+}
+.search-out { animation: search-out 0.18s ease both; }
+
+/* ── Sliding segmented toggle ───────────────────────────────────── */
+.seg-indicator {
+  position: absolute;
+  top: 4px; bottom: 4px;
+  border-radius: var(--border-radius-md, 8px);
+  background: rgba(255,255,255,0.12);
+  transition: left 0.26s cubic-bezier(0.16, 1, 0.3, 1), width 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+/* ── Home horizontal rows ─────────────────────────────────────── */
+.row-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent; }
+.row-scroll::-webkit-scrollbar { height: 6px; }
+.row-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+.row-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+.row-scroll::-webkit-scrollbar-track { background: transparent; }
 
 /* ── Mini Player Drag ─────────────────────────────────────────── */
 /* Make the entire mini-player window draggable;

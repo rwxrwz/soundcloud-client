@@ -13,6 +13,16 @@ export interface SCUser {
   description?: string
   city?: string
   country_code?: string
+  visual_url?: string | null   // legacy/top-level banner (rarely present)
+  visuals?: { visuals?: { visual_url?: string }[] } | null   // v2 nests the banner here
+  badges?: { pro?: boolean; pro_unlimited?: boolean; verified?: boolean }
+}
+
+// External links shown on a SoundCloud profile (Instagram, site, etc.)
+export interface SCWebProfile {
+  url: string
+  network?: string
+  title?: string
 }
 
 export interface SCTrack {
@@ -57,6 +67,10 @@ export interface SCPlaylist {
   track_count: number
   duration: number
   permalink_url: string
+  set_type?: string          // 'album' | 'ep' | 'single' | 'compilation' | 'playlist'
+  is_album?: boolean
+  release_date?: string | null
+  published_at?: string | null
 }
 
 export interface SCCollection<T> {
@@ -173,6 +187,18 @@ class SoundCloudService {
     return tracks.map(t => fullMap.get(t.id) ?? t)
   }
 
+  // Synchronous DRM/unavailable check for hydrated tracks. The reliable signal is
+  // an `encrypted` HLS transcoding — that's exactly what makes getStreamUrl throw
+  // 'DRM'. Note a DRM track may ALSO list a `progressive` entry that simply fails
+  // to resolve, so presence of progressive does NOT prove playability.
+  // A hydrated track with no transcodings at all is treated as unavailable too.
+  isDrm(track: SCTrack): boolean {
+    const ts = track.media?.transcodings ?? []
+    if (ts.some(t => t.format.protocol.includes('encrypted'))) return true
+    // No transcodings and no legacy stream — nothing playable here
+    return ts.length === 0 && !track.stream_url
+  }
+
   async getStreamUrl(track: SCTrack): Promise<string> {
     let transcodings = track.media?.transcodings ?? []
 
@@ -220,6 +246,17 @@ class SoundCloudService {
     return this.get<SCCollection<SCTrack>>(`/users/${userId}/tracks`, { limit })
   }
 
+  // Albums & EPs published by a user (playlists with set_type album/ep)
+  async getUserAlbums(userId: number, limit = 30): Promise<SCCollection<SCPlaylist>> {
+    return this.get<SCCollection<SCPlaylist>>(`/users/${userId}/albums`, { limit })
+  }
+
+  // External profile links (Instagram, website, etc.). Returns a bare array.
+  async getUserWebProfiles(userId: number): Promise<SCWebProfile[]> {
+    const res = await this.get<SCWebProfile[] | SCCollection<SCWebProfile>>(`/users/${userId}/web-profiles`)
+    return Array.isArray(res) ? res : (res.collection ?? [])
+  }
+
   // Renderer-side fetch: uses Chromium browser context with DataDome cookies + webSecurity:false
   private async scWrite(method: string, path: string, body: unknown = null): Promise<unknown> {
     const url = `${API}${path}?client_id=${this.clientId}`
@@ -247,6 +284,13 @@ class SoundCloudService {
     await this.scWrite('DELETE', `/me/followings/${artistId}`)
   }
 
+  // Resolve a public SoundCloud playlist URL to its title + full track list.
+  async resolvePlaylist(url: string): Promise<{ title: string; tracks: SCTrack[] }> {
+    const pl = await this.get<SCPlaylist>('/resolve', { url: url.trim() })
+    const tracks = await this.hydratePlaylistTracks(pl.tracks ?? [])
+    return { title: pl.title ?? 'Imported', tracks }
+  }
+
   // Create a new playlist. SC v2 expects { playlist: { title, sharing, tracks: [ids] } }.
   async createPlaylist(title: string, trackIds: number[] = [], sharing: 'public' | 'private' = 'private'): Promise<SCPlaylist> {
     return this.scWrite('POST', '/playlists', {
@@ -256,6 +300,13 @@ class SoundCloudService {
 
   async deletePlaylist(playlistId: number): Promise<void> {
     await this.scWrite('DELETE', `/playlists/${playlistId}`)
+  }
+
+  // Rename a playlist. API expects { playlist: { title } }.
+  async renamePlaylist(playlistId: number, title: string): Promise<void> {
+    await this.scWrite('PUT', `/playlists/${playlistId}`, {
+      playlist: { title }
+    })
   }
 
   // Replace the full track list of a playlist. API expects plain track IDs.
@@ -287,7 +338,7 @@ class SoundCloudService {
     return res.data
   }
 
-  formatArtwork(url: string | null, size: 't500x500' | 't200x200' | 'large' = 't500x500'): string {
+  formatArtwork(url: string | null, size: 't500x500' | 't200x200' | 't67x67' | 'large' = 't500x500'): string {
     if (!url) return ''
     return url.replace('-large', `-${size}`)
   }

@@ -3,49 +3,137 @@ import { usePlayer, useToast, useSettings, useLyrics, EQ_BANDS } from '../store'
 import { sc } from '../services/soundcloud'
 import { translate } from '../i18n'
 import { fetchLyrics } from '../services/lyrics'
+import { audioBus } from './audioBus'
 
+// Two-channel audio engine. With crossfade off, only channel 0 is ever used and
+// the behaviour matches the original single-element player. With crossfade > 0 the
+// incoming track loads into the idle channel and the two channel gains ramp past
+// each other so the tracks overlap.
 export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null>) {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
   const ctxRef = useRef<AudioContext | null>(null)
-  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null)
-  const gainRef = useRef<GainNode | null>(null)
+  const elemsRef = useRef<HTMLAudioElement[]>([])
+  const srcRef = useRef<(MediaElementAudioSourceNode | null)[]>([null, null])
+  const chGainRef = useRef<(GainNode | null)[]>([null, null])  // per-channel crossfade gain
+  const masterGainRef = useRef<GainNode | null>(null)          // play/pause fade
   const analyserNodeRef = useRef<AnalyserNode | null>(null)
   const eqNodesRef = useRef<BiquadFilterNode[]>([])
+  const activeRef = useRef(0)
+  const firstLoadRef = useRef(true)
+  const earlyRef = useRef(false)   // we advanced early to start a crossfade tail
+  const drmSkipRef = useRef(0)     // consecutive DRM auto-skips (loop guard)
 
   const { currentTrack, isPlaying, volume, setProgress, setDuration, nextTrack, repeat, seekRequest } = usePlayer()
   const { show: showToast } = useToast()
-  const { eq, eqEnabled } = useSettings()
+  const { eq, eqEnabled, outputDeviceId } = useSettings()
 
-  // Init audio element once
-  useEffect(() => {
-    if (!audioRef.current) {
-      audioRef.current = new Audio()
-      audioRef.current.crossOrigin = 'anonymous'
-      audioRef.current.preload = 'auto'
+  const activeEl = () => elemsRef.current[activeRef.current]
+
+  // Build the WebAudio graph once: both channels share the EQ chain, master gain
+  // and analyser. source[i] → chGain[i] → eq0 → … → eq4 → master → analyser → dest
+  const buildGraph = (ctx: AudioContext) => {
+    const srcs = srcRef.current, chs = chGainRef.current
+    for (let i = 0; i < 2; i++) {
+      if (!srcs[i]) srcs[i] = ctx.createMediaElementSource(elemsRef.current[i])
+      if (!chs[i]) { const g = ctx.createGain(); g.gain.value = i === activeRef.current ? 1 : 0; chs[i] = g }
     }
-    const audio = audioRef.current
+    if (eqNodesRef.current.length === 0) {
+      eqNodesRef.current = EQ_BANDS.map((freq, i) => {
+        const f = ctx.createBiquadFilter()
+        f.type = i === 0 ? 'lowshelf' : i === EQ_BANDS.length - 1 ? 'highshelf' : 'peaking'
+        f.frequency.value = freq
+        if (f.type === 'peaking') f.Q.value = 1
+        f.gain.value = 0
+        return f
+      })
+    }
+    const eqNodes = eqNodesRef.current
+    const { eq: eqGains, eqEnabled: enabled } = useSettings.getState()
+    eqNodes.forEach((f, i) => { f.gain.value = enabled ? (eqGains[i] ?? 0) : 0 })
 
-    const onTimeUpdate = () => setProgress(audio.currentTime)
-    const onLoadedMetadata = () => setDuration(audio.duration)
-    const onEnded = () => {
-      if (repeat === 'one') { audio.currentTime = 0; audio.play() }
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 256
+    analyser.smoothingTimeConstant = 0.85
+    const master = ctx.createGain()
+    master.gain.value = 1
+
+    for (let i = 0; i < 2; i++) { srcs[i]!.connect(chs[i]!); chs[i]!.connect(eqNodes[0]) }
+    let node: AudioNode = eqNodes[0]
+    for (let k = 1; k < eqNodes.length; k++) { node.connect(eqNodes[k]); node = eqNodes[k] }
+    node.connect(master)
+    master.connect(analyser)
+    analyser.connect(ctx.destination)
+
+    masterGainRef.current = master
+    analyserNodeRef.current = analyser
+  }
+
+  // Init both audio elements once + listeners
+  useEffect(() => {
+    if (elemsRef.current.length === 0) {
+      for (let i = 0; i < 2; i++) {
+        const a = new Audio()
+        a.crossOrigin = 'anonymous'
+        a.preload = 'auto'
+        elemsRef.current.push(a)
+      }
+    }
+
+    const onTimeUpdate = (e: Event) => {
+      if (e.target !== activeEl()) return
+      const a = activeEl()
+      setProgress(a.currentTime)
+      // Start the crossfade a little before the track ends by advancing early
+      const cf = useSettings.getState().crossfade
+      if (cf > 0 && !earlyRef.current && repeat !== 'one' && a.duration && isFinite(a.duration)) {
+        const st = usePlayer.getState()
+        const hasNext = st.shuffle || st.repeat === 'all' || st.queueIndex < st.queue.length - 1
+        if (hasNext && a.duration - a.currentTime <= cf) {
+          earlyRef.current = true
+          st.nextTrack()
+        }
+      }
+    }
+    const onLoaded = (e: Event) => { if (e.target === activeEl()) setDuration((e.target as HTMLAudioElement).duration) }
+    const onEnded = (e: Event) => {
+      if (e.target !== activeEl()) return          // an old crossfade tail finished — ignore
+      if (earlyRef.current) { earlyRef.current = false; return }
+      if (repeat === 'one') { const a = activeEl(); a.currentTime = 0; a.play() }
       else nextTrack()
     }
 
-    audio.addEventListener('timeupdate', onTimeUpdate)
-    audio.addEventListener('loadedmetadata', onLoadedMetadata)
-    audio.addEventListener('ended', onEnded)
-    return () => {
-      audio.removeEventListener('timeupdate', onTimeUpdate)
-      audio.removeEventListener('loadedmetadata', onLoadedMetadata)
-      audio.removeEventListener('ended', onEnded)
-    }
+    const els = elemsRef.current
+    els.forEach(a => {
+      a.addEventListener('timeupdate', onTimeUpdate)
+      a.addEventListener('loadedmetadata', onLoaded)
+      a.addEventListener('ended', onEnded)
+    })
+    return () => els.forEach(a => {
+      a.removeEventListener('timeupdate', onTimeUpdate)
+      a.removeEventListener('loadedmetadata', onLoaded)
+      a.removeEventListener('ended', onEnded)
+    })
   }, [repeat, nextTrack, setProgress, setDuration])
 
   // Load new track
   useEffect(() => {
-    if (!currentTrack || !audioRef.current) return
-    const audio = audioRef.current
+    if (!currentTrack || elemsRef.current.length < 2) return
+
+    // Auto-skip DRM-protected tracks (guarded against looping a fully-DRM queue)
+    if (useSettings.getState().autoSkipDrm && sc.isDrm(currentTrack)) {
+      const st = usePlayer.getState()
+      const hasNext = st.queue.length > 1 && (st.shuffle || st.repeat === 'all' || st.queueIndex < st.queue.length - 1)
+      if (hasNext && drmSkipRef.current < st.queue.length) {
+        drmSkipRef.current++
+        st.nextTrack()
+        return
+      }
+      drmSkipRef.current = 0
+      usePlayer.setState({ playbackError: translate('errDrm') })
+      usePlayer.getState().setPlaying(false)
+      return
+    }
+    drmSkipRef.current = 0
+
     usePlayer.setState({ playbackError: null })
 
     // Prefetch lyrics availability for the "L" badge (cached by track id)
@@ -56,62 +144,70 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
       durationSec: (currentTrack.duration ?? 0) / 1000,
     }).then(res => useLyrics.getState().mark(currentTrack.id, !!res)).catch(() => {})
 
+    const cf = useSettings.getState().crossfade
+    const crossfading = cf > 0 && !firstLoadRef.current && masterGainRef.current != null
+    const targetCh = crossfading ? (activeRef.current + 1) % 2 : activeRef.current
+    const el = elemsRef.current[targetCh]
+
+    const handlePlayErr = (err: Error) => {
+      if (err?.name === 'AbortError') return
+      console.error('play() failed:', err?.message, 'track:', currentTrack?.title)
+      useToast.getState().show(translate('errPlay'), 'error')
+      usePlayer.getState().setPlaying(false)
+    }
+
     sc.getStreamUrl(currentTrack).then((url: string) => {
-      audio.src = url
-      audio.load()
-      if (usePlayer.getState().isPlaying) audio.play().catch((err: Error) => {
-        // Ignore AbortError — it just means the track changed before play() resolved
-        if (err?.name === 'AbortError') return
-        console.error('play() failed:', err?.message, 'track:', currentTrack?.title)
-        useToast.getState().show(translate('errPlay'), 'error')
-        usePlayer.getState().setPlaying(false)
-      })
+      el.src = url
+      el.load()
+      el.volume = usePlayer.getState().volume
 
       if (!ctxRef.current) ctxRef.current = new AudioContext()
       const ctx = ctxRef.current
       if (ctx.state === 'suspended') ctx.resume()
+      // Route to the chosen output device (Chromium AudioContext.setSinkId)
+      const oid = useSettings.getState().outputDeviceId
+      const ctxAny = ctx as unknown as { setSinkId?: (id: string) => Promise<void> }
+      if (oid && ctxAny.setSinkId) ctxAny.setSinkId(oid).catch(() => {})
 
-      if (!sourceRef.current) sourceRef.current = ctx.createMediaElementSource(audio)
+      if (!masterGainRef.current) buildGraph(ctx)
 
-      // Create the 5-band EQ filter chain once
-      if (eqNodesRef.current.length === 0) {
-        eqNodesRef.current = EQ_BANDS.map((freq, i) => {
-          const f = ctx.createBiquadFilter()
-          f.type = i === 0 ? 'lowshelf' : i === EQ_BANDS.length - 1 ? 'highshelf' : 'peaking'
-          f.frequency.value = freq
-          if (f.type === 'peaking') f.Q.value = 1
-          f.gain.value = 0
-          return f
-        })
-      }
-      const eqNodes = eqNodesRef.current
+      // Apply current EQ settings to the (shared) filter chain
       const { eq: eqGains, eqEnabled: enabled } = useSettings.getState()
-      eqNodes.forEach((f, i) => { f.gain.value = enabled ? (eqGains[i] ?? 0) : 0 })
+      eqNodesRef.current.forEach((f, i) => { f.gain.value = enabled ? (eqGains[i] ?? 0) : 0 })
 
-      // Disconnect stale nodes before creating new ones
-      try { analyserNodeRef.current?.disconnect() } catch {}
-      try { gainRef.current?.disconnect() } catch {}
-      try { sourceRef.current.disconnect() } catch {}
-      eqNodes.forEach(f => { try { f.disconnect() } catch {} })
+      const chs = chGainRef.current
+      const now = ctx.currentTime
+      const playing = usePlayer.getState().isPlaying
 
-      const analyser = ctx.createAnalyser()
-      analyser.fftSize = 256
-      analyser.smoothingTimeConstant = 0.85
+      if (crossfading) {
+        const inG = chs[targetCh]!, outG = chs[activeRef.current]!
+        inG.gain.cancelScheduledValues(now)
+        inG.gain.setValueAtTime(Math.max(inG.gain.value, 0.0001), now)
+        inG.gain.linearRampToValueAtTime(1, now + cf)
+        outG.gain.cancelScheduledValues(now)
+        outG.gain.setValueAtTime(Math.max(outG.gain.value, 0.0001), now)
+        outG.gain.linearRampToValueAtTime(0.0001, now + cf)
+        if (playing) el.play().catch(handlePlayErr)
+        const oldCh = activeRef.current
+        activeRef.current = targetCh
+        earlyRef.current = false
+        const oldEl = elemsRef.current[oldCh]
+        setTimeout(() => { try { oldEl.pause(); oldEl.currentTime = 0 } catch {} }, cf * 1000 + 150)
+      } else {
+        chs[targetCh]?.gain.cancelScheduledValues(now)
+        chs[targetCh]?.gain.setValueAtTime(1, now)
+        const other = (targetCh + 1) % 2
+        chs[other]?.gain.cancelScheduledValues(now)
+        chs[other]?.gain.setValueAtTime(0.0001, now)
+        try { elemsRef.current[other]?.pause() } catch {}
+        if (playing) el.play().catch(handlePlayErr)
+      }
 
-      const gain = ctx.createGain()
-      gain.gain.value = 1
-
-      // Chain: source → eq0 → … → eq4 → gain → analyser → destination
-      let node: AudioNode = sourceRef.current
-      for (const f of eqNodes) { node.connect(f); node = f }
-      node.connect(gain)
-      gain.connect(analyser)
-      analyser.connect(ctx.destination)
-
-      analyserNodeRef.current = analyser
-      gainRef.current = gain
-      analyserRef.current = analyser
+      firstLoadRef.current = false
+      analyserRef.current = analyserNodeRef.current
+      audioBus.analyser = analyserNodeRef.current
     }).catch((err: Error) => {
+      earlyRef.current = false
       console.error('getStreamUrl failed:', err?.message, 'track:', currentTrack?.title)
       const reason = err?.message === 'DRM'
         ? translate('errDrm')
@@ -127,38 +223,36 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
 
   // Play/pause with smooth fade — no clicks
   useEffect(() => {
-    const audio = audioRef.current
-    const gain = gainRef.current
     const ctx = ctxRef.current
-    if (!audio) return
+    const master = masterGainRef.current
+    const a = activeEl()
+    if (!a) return
 
     if (isPlaying) {
-      if (gain && ctx) {
-        // Always start from near-silence so there's no jump
-        gain.gain.cancelScheduledValues(ctx.currentTime)
-        gain.gain.setValueAtTime(0.0001, ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(1, ctx.currentTime + 0.25)
+      if (master && ctx) {
+        master.gain.cancelScheduledValues(ctx.currentTime)
+        master.gain.setValueAtTime(0.0001, ctx.currentTime)
+        master.gain.exponentialRampToValueAtTime(1, ctx.currentTime + 0.25)
       }
-      audio.play().catch(console.error)
+      a.play().catch(console.error)
     } else {
-      if (gain && ctx) {
-        gain.gain.cancelScheduledValues(ctx.currentTime)
-        gain.gain.setValueAtTime(Math.max(gain.gain.value, 0.0001), ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4)
-        // Pause only after fade completes — don't touch gain after pause
+      if (master && ctx) {
+        master.gain.cancelScheduledValues(ctx.currentTime)
+        master.gain.setValueAtTime(Math.max(master.gain.value, 0.0001), ctx.currentTime)
+        master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4)
         const t = setTimeout(() => {
-          if (!usePlayer.getState().isPlaying) audio.pause()
+          if (!usePlayer.getState().isPlaying) elemsRef.current.forEach(el => el.pause())
         }, 450)
         return () => clearTimeout(t)
       } else {
-        audio.pause()
+        elemsRef.current.forEach(el => el.pause())
       }
     }
   }, [isPlaying])
 
   // Volume
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = volume
+    elemsRef.current.forEach(el => { if (el) el.volume = volume })
   }, [volume])
 
   // Live EQ updates — apply band gains without rebuilding the graph
@@ -171,16 +265,24 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
     })
   }, [eq, eqEnabled])
 
+  // Apply output-device changes live
+  useEffect(() => {
+    const ctx = ctxRef.current as unknown as { setSinkId?: (id: string) => Promise<void> } | null
+    if (ctx && ctx.setSinkId) ctx.setSinkId(outputDeviceId || '').catch(() => {})
+  }, [outputDeviceId])
+
   // seekRequest from store (keyboard shortcuts, etc.)
   useEffect(() => {
-    if (seekRequest === null || !audioRef.current) return
-    audioRef.current.currentTime = seekRequest
+    if (seekRequest === null) return
+    const a = activeEl()
+    if (a) a.currentTime = seekRequest
     // Reset so the same target can be requested again later
     usePlayer.setState({ seekRequest: null })
   }, [seekRequest])
 
   const seek = useCallback((time: number) => {
-    if (audioRef.current) audioRef.current.currentTime = time
+    const a = activeEl()
+    if (a) a.currentTime = time
   }, [])
 
   return { seek }

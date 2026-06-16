@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { usePlayer, useUI, useSettings, ACCENT_COLORS } from '../store'
 import { sc } from '../services/soundcloud'
 import { Visualizer } from './Visualizer'
 import { Slider } from './Slider'
 import { TrackActions } from './TrackActions'
+import { LyricsView } from './LyricsView'
 import { useT } from '../i18n'
 import { fetchLyrics, LyricsResult } from '../services/lyrics'
 
@@ -33,12 +34,14 @@ export function FullScreenPlayer({ analyserRef, seek }: Props) {
   const setShowLyrics = setLyricsOpen
   const [lyrics, setLyrics] = useState<LyricsResult | null>(null)
   const [lyricsLoading, setLyricsLoading] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const close = () => { if (closing) return; setClosing(true); setTimeout(() => setShowFullscreen(false), 280) }
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowFullscreen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setShowFullscreen])
+  }, [])
 
   // Fetch lyrics when the lyrics view is open and the track changes
   useEffect(() => {
@@ -61,7 +64,7 @@ export function FullScreenPlayer({ analyserRef, seek }: Props) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[150] flex flex-col items-center justify-center fade-in overflow-hidden"
+      className={`fixed inset-0 z-[150] flex flex-col items-center justify-center overflow-hidden ${closing ? 'fade-out' : 'fade-in'}`}
       style={{ background: '#07070b' }}
     >
       {/* Layered living background */}
@@ -121,7 +124,7 @@ export function FullScreenPlayer({ analyserRef, seek }: Props) {
 
       {/* Close */}
       <button
-        onClick={() => setShowFullscreen(false)}
+        onClick={close}
         title={t('exitFullscreen')}
         className="absolute top-5 right-5 z-10 w-10 h-10 rounded-full flex items-center justify-center text-white/60 hover:text-white transition-all"
         style={{ background: 'rgba(255,255,255,0.08)', WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -135,10 +138,10 @@ export function FullScreenPlayer({ analyserRef, seek }: Props) {
       <div className="relative z-[1] flex items-center justify-center gap-12 px-8 w-full"
         style={{ maxWidth: showLyrics ? 980 : 560 }}>
 
-        {/* Lyrics panel — to the left of the artwork */}
+        {/* Lyrics panel â€” to the left of the artwork */}
         {showLyrics && (
           <div className="shrink-0 fade-in" style={{ width: 400 }}>
-            <LyricsView lyrics={lyrics} loading={lyricsLoading} progress={progress} onSeek={seek} t={t} />
+            <LyricsView lyrics={lyrics} loading={lyricsLoading} progress={progress} onSeek={seek} />
           </div>
         )}
 
@@ -229,68 +232,5 @@ export function FullScreenPlayer({ analyserRef, seek }: Props) {
       </div>
     </div>,
     document.body
-  )
-}
-
-function LyricsView({ lyrics, loading, progress, onSeek, t }: {
-  lyrics: LyricsResult | null
-  loading: boolean
-  progress: number
-  onSeek: (t: number) => void
-  t: (k: 'lyricsLoading' | 'lyricsNotFound') => string
-}) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const activeRef = useRef<HTMLParagraphElement>(null)
-
-  const synced = lyrics?.synced ?? null
-  const activeIdx = synced
-    ? synced.reduce((acc, l, i) => (l.time <= progress + 0.25 ? i : acc), -1)
-    : -1
-
-  // Auto-scroll active line to center
-  useEffect(() => {
-    if (activeRef.current && containerRef.current) {
-      activeRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-  }, [activeIdx])
-
-  const box = "w-full overflow-y-auto text-center px-2"
-  const boxStyle = { height: 360, maxHeight: '52vh', maskImage: 'linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent)' } as React.CSSProperties
-
-  if (loading) return <div className="flex items-center justify-center" style={{ height: 360 }}><div className="w-7 h-7 border-2 border-white/30 border-t-white rounded-full animate-spin" /></div>
-  if (!lyrics) return <div className="flex items-center justify-center text-white/40 text-sm" style={{ height: 360 }}>{t('lyricsNotFound')}</div>
-
-  if (synced) {
-    return (
-      <div ref={containerRef} className={box} style={boxStyle}>
-        <div className="py-[40%] space-y-3">
-          {synced.map((line, i) => {
-            const active = i === activeIdx
-            return (
-              <p
-                key={i}
-                ref={active ? activeRef : undefined}
-                onClick={() => onSeek(line.time)}
-                className="text-xl font-semibold leading-snug cursor-pointer transition-all duration-300"
-                style={{
-                  color: active ? '#fff' : 'rgba(255,255,255,0.35)',
-                  transform: active ? 'scale(1.04)' : 'scale(1)',
-                  filter: active ? 'none' : 'blur(0.3px)',
-                }}
-              >
-                {line.text || '♪'}
-              </p>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
-
-  // Plain lyrics
-  return (
-    <div className={box} style={boxStyle}>
-      <div className="py-8 whitespace-pre-line text-white/70 text-base leading-relaxed">{lyrics.plain}</div>
-    </div>
   )
 }

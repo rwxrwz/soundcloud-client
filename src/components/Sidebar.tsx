@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react'
-import { useProfile, useUI, useSettings, ACCENT_COLORS } from '../store'
-import { SettingsPanel } from './SettingsPanel'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import { useProfile, useUI, useSettings, usePlayer, ACCENT_COLORS } from '../store'
 import { useT } from '../i18n'
 import logo from '../assets/logo_sidebar.png'
 
 const NAV = [
+  { id: 'main'      as const, key: 'home'      as const, icon: HomeIcon },
   { id: 'stream'    as const, key: 'stream'    as const, icon: StreamIcon },
   { id: 'releases'  as const, key: 'releases'  as const, icon: ReleasesIcon },
   { id: 'likes'     as const, key: 'likes'     as const, icon: HeartIcon  },
@@ -14,8 +14,10 @@ const NAV = [
 
 export function Sidebar() {
   const { user, likes, playlists, setLikes, setPlaylists, setStream, clientId, oauthToken } = useProfile()
-  const { page, setPage, goToPlaylists, showSettings, setShowSettings } = useUI()
-  const { accent } = useSettings()
+  const { page, setPage, goToPlaylists, setShowSettings } = useUI()
+  const { accent, playerStyle } = useSettings()
+  const compact = playerStyle === 'fullscreen'
+  const showVolume = compact && page === 'main'
   const t = useT()
   const [syncing, setSyncing] = useState(false)
   const accentHex = ACCENT_COLORS[accent as keyof typeof ACCENT_COLORS] ?? 'var(--accent)'
@@ -61,36 +63,38 @@ export function Sidebar() {
     <>
       <div className="w-full flex flex-col h-full relative">
         {/* Logo / drag region */}
-        <div className="px-4 pt-4 pb-3 drag-region">
-          <div className="flex items-center gap-2.5 no-drag">
+        <div className={`pt-4 pb-3 drag-region ${compact ? 'px-0' : 'px-4'}`}>
+          <div className={`flex items-center gap-2.5 no-drag ${compact ? 'justify-center' : ''}`}>
             <div className="w-7 h-7 shrink-0">
               <img src={logo} alt="" className="w-full h-full object-contain" />
             </div>
-            <span className="font-semibold text-sm text-white/80">SoundCloud</span>
+            {!compact && <span className="font-semibold text-sm text-white/80">SoundCloud</span>}
           </div>
         </div>
 
         {/* User card */}
         {user && (
-          <div className="mx-3 mb-3 px-3 py-2.5 rounded-xl slide-right"
-            style={{
+          <div className={`mb-3 rounded-xl slide-right ${compact ? 'mx-2 p-0 flex justify-center bg-transparent border-0' : 'mx-3 px-3 py-2.5'}`}
+            style={compact ? undefined : {
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid rgba(255,255,255,0.08)'
             }}>
-            <div className="flex items-center gap-2.5">
+            <div className={`flex items-center ${compact ? '' : 'gap-2.5'}`}>
               <div className="relative shrink-0">
                 <img
                   src={user.avatar_url?.replace('-large', '-t50x50')}
                   alt=""
-                  className="w-8 h-8 rounded-full object-cover"
+                  className={`rounded-full object-cover ${compact ? 'w-9 h-9' : 'w-8 h-8'}`}
                 />
                 <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#080808]"
                   style={{ background: accentHex }} />
               </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold truncate text-white/90">{user.full_name || user.username}</p>
-                <p className="text-[10px] text-white/40 truncate">@{user.username}</p>
-              </div>
+              {!compact && (
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold truncate text-white/90">{user.full_name || user.username}</p>
+                  <p className="text-[10px] text-white/40 truncate">@{user.username}</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -118,32 +122,35 @@ export function Sidebar() {
                 key={item.id}
                 data-active={active ? 'true' : undefined}
                 onClick={() => item.id === 'playlists' ? goToPlaylists() : setPage(item.id)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium relative group"
+                title={compact ? t(item.key) : undefined}
+                className={`w-full flex items-center rounded-xl text-sm font-medium relative group ${compact ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}`}
                 style={{
                   color: active ? '#fff' : 'rgba(255,255,255,0.45)',
                   transition: 'color 0.3s ease',
                 }}
               >
-                {/* Left accent bar */}
-                <span
-                  className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 rounded-r-full"
-                  style={{
-                    height: active ? 20 : 0,
-                    background: accentHex,
-                    transition: 'height 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-                  }}
-                />
+                {/* Left accent bar — only in the wide sidebar (looks stray when icons are centered) */}
+                {!compact && (
+                  <span
+                    className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 rounded-r-full"
+                    style={{
+                      height: active ? 20 : 0,
+                      background: accentHex,
+                      transition: 'height 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+                    }}
+                  />
+                )}
 
                 <span style={{ color: active ? accentHex : undefined }} className="transition-colors duration-300">
                   <Icon />
                 </span>
 
-                {t(item.key)}
+                {!compact && t(item.key)}
 
-                {item.id === 'likes' && likes.length > 0 && (
+                {!compact && item.id === 'likes' && likes.length > 0 && (
                   <span className="ml-auto text-[10px] text-white/30">{likes.length}</span>
                 )}
-                {item.id === 'playlists' && playlists.length > 0 && (
+                {!compact && item.id === 'playlists' && playlists.length > 0 && (
                   <span className="ml-auto text-[10px] text-white/30">{playlists.length}</span>
                 )}
 
@@ -157,19 +164,34 @@ export function Sidebar() {
           })}
         </nav>
 
+        {/* Volume — only in the fullscreen style on Home (the default style keeps
+            the volume slider in the bottom NowPlaying bar). Collapses with an animation. */}
+        <div
+          className="overflow-hidden shrink-0"
+          style={{
+            maxHeight: showVolume ? 168 : 0,
+            opacity: showVolume ? 1 : 0,
+            pointerEvents: showVolume ? 'auto' : 'none',
+            transition: 'max-height 0.34s cubic-bezier(0.16,1,0.3,1), opacity 0.24s ease',
+          }}
+        >
+          <VolumeColumn accentHex={accentHex} />
+        </div>
+
         {/* Bottom bar: refresh + settings */}
-        <div className="p-3 flex gap-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className={`p-3 flex gap-1.5 ${compact ? 'flex-col items-center' : ''}`}>
           {/* Settings */}
           <button
             onClick={() => setShowSettings(true)}
-            className="flex-1 flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-white/40 hover:text-white/80 transition-all duration-200 hover:bg-white/5"
+            title={compact ? t('settings') : undefined}
+            className={`flex items-center text-sm text-white/40 hover:text-white/80 transition-all duration-200 hover:bg-white/5 rounded-xl ${compact ? 'justify-center w-9 h-9' : 'flex-1 gap-2.5 px-3 py-2'}`}
           >
             <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                 d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
             </svg>
-            {t('settings')}
+            {!compact && t('settings')}
           </button>
 
           {/* Refresh */}
@@ -193,12 +215,108 @@ export function Sidebar() {
           </button>
         </div>
       </div>
-
-      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </>
   )
 }
 
+function VolumeColumn({ accentHex }: { accentHex: string }) {
+  const { volume, setVolume } = usePlayer()
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const [hovering, setHovering] = useState(false)
+  const active = dragging || hovering
+  const pct = Math.min(100, Math.max(0, volume * 100))
+  const round = (v: number) => Math.round(v * 100) / 100
+
+  // top of the track = full volume, bottom = muted
+  const valueFrom = useCallback((clientY: number) => {
+    const rect = trackRef.current?.getBoundingClientRect()
+    if (!rect || rect.height === 0) return volume
+    return round(Math.min(1, Math.max(0, 1 - (clientY - rect.top) / rect.height)))
+  }, [volume])
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setDragging(true)
+    setVolume(valueFrom(e.clientY))
+  }
+
+  useEffect(() => {
+    if (!dragging) return
+    const move = (e: MouseEvent) => setVolume(valueFrom(e.clientY))
+    const up = () => setDragging(false)
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
+  }, [dragging, valueFrom, setVolume])
+
+  const onWheel = (e: React.WheelEvent) => {
+    setVolume(round(Math.min(1, Math.max(0, volume - Math.sign(e.deltaY) * 0.05))))
+  }
+
+  return (
+    <div className="pt-3 pb-1 flex flex-col items-center gap-2">
+      <div
+        ref={trackRef}
+        onMouseDown={onMouseDown}
+        onWheel={onWheel}
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+        className="relative cursor-pointer select-none"
+        style={{ width: 20, height: 108 }}
+      >
+        <div className="absolute rounded-full" style={{
+          left: '50%', transform: 'translateX(-50%)',
+          width: active ? 5 : 3, top: 0, bottom: 0,
+          background: 'rgba(255,255,255,0.12)',
+          transition: 'width 0.12s ease',
+        }}>
+          <div className="absolute bottom-0 left-0 right-0 rounded-full" style={{
+            height: `${pct}%`,
+            background: accentHex,
+            transition: dragging ? 'none' : 'height 0.1s linear',
+          }} />
+        </div>
+        <div style={{
+          position: 'absolute',
+          width: 13, height: 13, borderRadius: '50%', background: '#fff',
+          left: '50%',
+          bottom: `calc(${pct}% - 6.5px)`,
+          transform: `translateX(-50%) scale(${dragging ? 1.2 : 1})`,
+          opacity: active ? 1 : 0,
+          transition: 'opacity 0.15s ease, transform 0.1s ease',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+          pointerEvents: 'none',
+        }} />
+      </div>
+      <button
+        onClick={() => setVolume(volume === 0 ? 0.7 : 0)}
+        className="text-white/40 hover:text-white/80 transition-colors"
+        title="Mute"
+      >
+        {volume === 0 ? (
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"/>
+          </svg>
+        ) : volume < 0.5 ? (
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/>
+          </svg>
+        ) : (
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+          </svg>
+        )}
+      </button>
+    </div>
+  )
+}
+
+function HomeIcon() {
+  return <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/>
+  </svg>
+}
 function StreamIcon() {
   return <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0l-4-4m4 4l-4 4M5 11l4-4M5 11l4 4"/>

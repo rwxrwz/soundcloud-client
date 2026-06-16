@@ -20,6 +20,14 @@ export function TrackPage() {
   const [comments, setComments] = useState<SCComment[]>([])
   const [loading, setLoading] = useState(true)
   const commentsRef = useRef<HTMLDivElement>(null)
+  const [closing, setClosing] = useState(false)
+  const close = () => { if (closing) return; setClosing(true); setTimeout(() => setShowTrackPage(false), 300) }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     if (!currentTrack) return
@@ -40,8 +48,6 @@ export function TrackPage() {
     })
   }, [currentTrack?.id])
 
-  const close = () => setShowTrackPage(false)
-
   const artwork = currentTrack
     ? sc.formatArtwork(currentTrack.artwork_url || currentTrack.user?.avatar_url, 't500x500')
     : null
@@ -50,10 +56,10 @@ export function TrackPage() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end track-page-backdrop"
+      className={`fixed inset-0 z-50 flex items-end track-page-backdrop ${closing ? 'closing' : ''}`}
       onClick={e => { if (e.target === e.currentTarget) close() }}
     >
-      <div className="w-full track-page-panel glass-island rounded-t-3xl flex flex-col overflow-hidden"
+      <div className={`w-full track-page-panel glass-island rounded-t-3xl flex flex-col overflow-hidden ${closing ? 'closing' : ''}`}
         style={{ height: '88%' }}
       >
         {/* Handle bar */}

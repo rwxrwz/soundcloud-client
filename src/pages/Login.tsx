@@ -24,17 +24,23 @@ declare global {
       windowMaximize: () => Promise<void>
       windowClose: () => Promise<void>
       setDiscordRpc: (enabled: boolean) => Promise<void>
+      setCloseToTray: (enabled: boolean) => Promise<void>
+      setLoginItem: (enabled: boolean) => Promise<void>
+      getLoginItem: () => Promise<boolean>
       secureSetToken: (token: string) => Promise<boolean>
       secureGetToken: () => Promise<string>
+      wallpapersDir: () => Promise<string>
+      openWallpapers: () => Promise<void>
+      listWallpapers: () => Promise<{ name: string; path: string }[]>
     }
   }
 }
 
 export function Login() {
   const { setAuth } = useProfile()
-  const { accent } = useSettings()
+  const { accent, theme } = useSettings()
   const t = useT()
-  const accentHex = ACCENT_COLORS[accent] ?? ACCENT_COLORS.slate
+  const accentHex = ACCENT_COLORS[accent as keyof typeof ACCENT_COLORS] ?? ACCENT_COLORS.slate
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [step, setStep] = useState('')
@@ -46,7 +52,8 @@ export function Login() {
     const h = accentHex.replace('#', '')
     const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16)
     root.style.setProperty('--accent-rgb', `${r},${g},${b}`)
-  }, [accentHex])
+    root.dataset.theme = theme
+  }, [accentHex, theme])
 
   const handleLogin = async () => {
     setLoading(true); setError('')

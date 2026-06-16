@@ -1,5 +1,5 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
-import { usePlayer, useUI, useAccentHex } from '../store'
+﻿import { useRef, useEffect, useState, useCallback } from 'react'
+import { usePlayer, useUI, useSettings, useAccentHex } from '../store'
 import { sc } from '../services/soundcloud'
 import { useAudio } from '../hooks/useAudio'
 import { Visualizer } from './Visualizer'
@@ -17,6 +17,9 @@ export function NowPlaying() {
 
   const { currentTrack, isPlaying, volume, progress, duration, setPlaying, setVolume, nextTrack, prevTrack, repeat, shuffle, toggleRepeat, toggleShuffle, queue, playbackError } = usePlayer()
   const { setBgColor, setArtRgb, setShowTrackPage, setArtistPage, showQueue, setShowQueue, showFullscreen, setShowFullscreen } = useUI()
+  const playerStyle = useSettings(s => s.playerStyle)
+  // The separate fullscreen overlay is redundant when the whole home IS a player
+  const openFullscreen = () => { if (playerStyle !== 'fullscreen' && currentTrack) setShowFullscreen(true) }
   const t = useT()
   const accentHex = useAccentHex()
   const [artColor, setArtColor] = useState<[number, number, number]>([80, 80, 80])
@@ -33,7 +36,7 @@ export function NowPlaying() {
   useEffect(() => { artColorRef.current = artColor }, [artColor])
   useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying])
 
-  // Dominant color — sample 32×32, average top-20% most vivid pixels
+  // Dominant color â€” sample 32Ã—32, average top-20% most vivid pixels
   useEffect(() => {
     if (!artwork) { setBgColor('#080808'); setArtColor([80, 80, 80]); setArtRgb([80, 80, 80]); return }
     const img = new Image()
@@ -132,13 +135,13 @@ export function NowPlaying() {
     <>
     {showFullscreen && <FullScreenPlayer analyserRef={analyserRef} seek={seek} />}
     <div className="h-[80px] flex items-center px-5 gap-6">
-      {/* ── Left: track info ── */}
+      {/* â”€â”€ Left: track info â”€â”€ */}
       <div className="flex items-center gap-3 w-60 min-w-0 shrink-0">
         <div
           ref={artworkDivRef}
-          onClick={() => currentTrack && setShowTrackPage(true)}
+          onClick={openFullscreen}
           className="relative w-14 h-14 rounded-xl overflow-hidden bg-white/5 shrink-0 cursor-pointer"
-          title={t('trackDetails')}
+          title={t('fullscreen')}
         >
           {artwork ? (
             <img key={artwork} src={artwork} alt="" className="w-full h-full object-cover scale-in" />
@@ -182,7 +185,7 @@ export function NowPlaying() {
         )}
       </div>
 
-      {/* ── Center ── */}
+      {/* â”€â”€ Center â”€â”€ */}
       <div className="flex-1 flex flex-col items-center gap-2 min-w-0">
         {/* Controls */}
         <div className="flex items-center gap-3">
@@ -249,12 +252,13 @@ export function NowPlaying() {
         </div>
       </div>
 
-      {/* ── Right: queue btn + visualizer + volume ── */}
+      {/* â”€â”€ Right: queue btn + visualizer + volume â”€â”€ */}
       <div className="flex flex-col items-end gap-2 w-52 shrink-0">
         <div className="flex items-center justify-end gap-1 w-full">
           <Visualizer analyserRef={analyserRef} />
+          {playerStyle !== 'fullscreen' && (
           <button
-            onClick={() => currentTrack && setShowFullscreen(true)}
+            onClick={openFullscreen}
             title={t('fullscreen')}
             className="p-1.5 rounded-lg transition-all duration-150 active:scale-90"
             style={{ color: 'rgba(255,255,255,0.4)' }}
@@ -265,6 +269,7 @@ export function NowPlaying() {
               <path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3"/>
             </svg>
           </button>
+          )}
           <button
             onClick={() => setShowQueue(!showQueue)}
             title={t('queue')}
@@ -279,7 +284,7 @@ export function NowPlaying() {
             {queue.length > 0 && (
               <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full text-[8px] font-bold flex items-center justify-center"
                 style={{ background: accentHex, color: '#111' }}>
-                {queue.length > 99 ? '∞' : queue.length}
+                {queue.length > 99 ? 'âˆž' : queue.length}
               </span>
             )}
           </button>

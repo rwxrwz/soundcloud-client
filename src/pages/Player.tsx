@@ -13,17 +13,25 @@ function hexToRgbArr(hex: string): [number, number, number] {
 import { useSync } from '../hooks/useSync'
 import { Sidebar } from '../components/Sidebar'
 import { TrackList } from '../components/TrackList'
+import { HomePlayer } from '../components/HomePlayer'
+import { FsLivingBg } from '../components/FsLivingBg'
 import { NowPlaying } from '../components/NowPlaying'
 import { TrackPage } from '../components/TrackPage'
 import { ArtistPage } from '../components/ArtistPage'
 import { QueuePanel } from '../components/QueuePanel'
 import { PlaylistPicker } from '../components/PlaylistPicker'
 import { ContextMenu } from '../components/ContextMenu'
+import { PlaylistContextMenu } from '../components/PlaylistContextMenu'
+import { SettingsPanel } from '../components/SettingsPanel'
+import { HeroAnim } from '../components/HeroAnim'
+import { QuickCustomize } from '../components/QuickCustomize'
+import { QueueFlyout } from '../components/QueueFlyout'
 
 export function Player() {
   const { clientId, oauthToken, user } = useProfile()
-  const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, showQueue, showSettings } = useUI()
-  const { accent, bgStyle } = useSettings()
+  const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, showQueue, showSettings, setShowSettings, page } = useUI()
+  const { accent, bgStyle, wallpaperPath, theme, playerStyle, fsLiveBg } = useSettings()
+  const fsHome = playerStyle === 'fullscreen' && page === 'main'
   const { isPlaying, setPlaying, currentTrack, progress, duration, volume, setVolume, seekTo, nextTrack, prevTrack } = usePlayer()
   const accentHex: string = accent === 'artwork'
     ? `#${artRgb.map(v => v.toString(16).padStart(2,'0')).join('')}`
@@ -36,6 +44,17 @@ export function Player() {
   // Sync Discord RPC enabled state to main process on startup
   useEffect(() => {
     window.electronAPI?.setDiscordRpc(useSettings.getState().discordRpc)
+  }, [])
+
+  // Apply the configured start page + sync system prefs to the main process once
+  useEffect(() => {
+    const s = useSettings.getState()
+    useUI.getState().setPage(s.startPage)
+    window.electronAPI?.setCloseToTray?.(s.closeToTray)
+    // Reflect the real OS launch-at-login state back into the store
+    window.electronAPI?.getLoginItem?.().then(v => {
+      if (typeof v === 'boolean' && v !== s.launchAtStartup) s.setLaunchAtStartup(v)
+    }).catch(() => {})
   }, [])
 
   useSync()
@@ -76,6 +95,7 @@ export function Player() {
   // Keyboard shortcuts (skip when typing in an input)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (!useSettings.getState().mediaKeys) return
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
 
@@ -115,9 +135,20 @@ export function Player() {
     root.style.setProperty('--accent-rgb', `${r},${g},${b}`)
   }, [accentHex])
 
+  // Drive the visual theme preset app-wide via a root attribute the CSS keys off
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
+
+  // The living artwork background fills the whole window; when it's on, keep a
+  // neutral solid base under it so it doesn't blend with the page gradient.
+  const livingBgActive = fsHome && fsLiveBg && bgStyle !== 'wallpaper'
+
   const getBg = () => {
+    if (livingBgActive) return '#080808'
     const [r, g, b] = artRgb
     switch (bgStyle) {
+      case 'wallpaper': return '#080808'
       case 'dark':     return '#080808'
       case 'midnight': return 'linear-gradient(160deg, #0d0d1f 0%, #080808 60%)'
       case 'aurora':   return undefined
@@ -132,43 +163,84 @@ export function Player() {
 
   return (
     <div
-      className={`h-screen flex flex-col relative${bgStyle === 'aurora' ? ' aurora-bg' : ''}`}
+      className={`h-screen flex flex-col relative${bgStyle === 'aurora' && !livingBgActive ? ' aurora-bg' : ''}`}
       style={{ background: getBg(), transition: bgStyle === 'aurora' ? undefined : 'background 1.2s ease' }}
     >
+      {/* Video wallpaper background (behind everything) */}
+      {bgStyle === 'wallpaper' && wallpaperPath && (
+        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 0 }}>
+          <video
+            key={wallpaperPath}
+            src={encodeURI(`file:///${wallpaperPath.replace(/\\/g, '/')}`)}
+            autoPlay loop muted playsInline
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+          <div className="absolute inset-0" style={{ background: 'rgba(8,8,12,0.5)' }} />
+        </div>
+      )}
+
+      {/* Living artwork background — full window, behind the glass UI (fullscreen home) */}
+      {fsHome && fsLiveBg && bgStyle !== 'wallpaper' && <FsLivingBg />}
+
+      {/* Home hero animation — sits BEHIND the sidebar/content (z-index -1) and
+          pokes slightly onto the sidebar, showing through its glass */}
+      {page === 'main' && playerStyle !== 'fullscreen' && (
+        <div className="absolute pointer-events-none" style={{ top: 36, left: 170, right: 0, height: 240, zIndex: 0 }}>
+          <HeroAnim />
+        </div>
+      )}
+
       {/* Drag region */}
-      <div className="h-9 drag-region shrink-0" />
+      <div className="h-9 drag-region shrink-0 relative" style={{ zIndex: 1 }} />
 
       {/* Main row */}
-      <div className="flex-1 flex gap-3 px-3 min-h-0 overflow-hidden">
-        {/* Sidebar island — widens when settings are open */}
+      <div className={`flex-1 flex gap-3 px-3 min-h-0 overflow-hidden relative ${fsHome ? 'pb-3' : ''}`} style={{ zIndex: 1 }}>
+        {/* Sidebar island — icons-only in the fullscreen player style */}
         <div
           className="shrink-0 glass-island rounded-2xl flex flex-col overflow-hidden relative"
-          style={{
-            width: showSettings ? 320 : 208,
-            transition: 'width 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-            willChange: 'width',
-          }}
+          style={{ width: playerStyle === 'fullscreen' ? 72 : 208, transition: 'width 0.34s cubic-bezier(0.16,1,0.3,1)' }}
         >
           <Sidebar />
         </div>
 
-        {/* Track list */}
+        {/* Main content — fullscreen player on home, otherwise the track list */}
         <main className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ contain: 'layout paint' }}>
-          <TrackList />
+          {fsHome ? <HomePlayer /> : <TrackList />}
         </main>
       </div>
 
-      {/* Controls island */}
-      <div className="mx-3 mt-3 mb-3 glass-island rounded-2xl shrink-0">
-        <NowPlaying />
+      {/* Controls island — kept MOUNTED always (it hosts the audio engine via
+          useAudio). On the fullscreen-style home it animates closed (slide down +
+          collapse via grid-rows) instead of unmounting, so audio keeps playing. */}
+      <div
+        className="grid shrink-0"
+        style={{ gridTemplateRows: fsHome ? '0fr' : '1fr', transition: 'grid-template-rows 0.34s cubic-bezier(0.16,1,0.3,1)' }}
+      >
+        <div className="overflow-hidden min-h-0">
+          <div
+            className="mx-3 mt-3 mb-3 glass-island rounded-2xl relative"
+            style={{
+              zIndex: 1,
+              transform: fsHome ? 'translateY(16px)' : 'none',
+              opacity: fsHome ? 0 : 1,
+              transition: 'transform 0.34s cubic-bezier(0.16,1,0.3,1), opacity 0.28s ease',
+            }}
+          >
+            <NowPlaying />
+          </div>
+        </div>
       </div>
 
       {/* Overlays */}
       {showTrackPage && <TrackPage />}
       {artistPageUser && <ArtistPage />}
       {showQueue && <QueuePanel />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      {page === 'main' && <QuickCustomize />}
+      {fsHome && <QueueFlyout />}
       <PlaylistPicker />
       <ContextMenu />
+      <PlaylistContextMenu />
     </div>
   )
 }

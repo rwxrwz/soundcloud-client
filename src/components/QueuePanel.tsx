@@ -1,15 +1,23 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { usePlayer, useUI, useToast, useAccentHex } from '../store'
 import { sc } from '../services/soundcloud'
 import { useT } from '../i18n'
 import type { SCTrack } from '../services/soundcloud'
 
 export function QueuePanel() {
-  const { queue, queueIndex, currentTrack, setTrack, removeFromQueue, moveInQueue } = usePlayer()
+  const { queue, queueIndex, currentTrack, setTrack, removeFromQueue, moveInQueue, clearQueue } = usePlayer()
   const { setShowQueue } = useUI()
   const { show: showToast } = useToast()
   const t = useT()
   const accentHex = useAccentHex()
+  const [closing, setClosing] = useState(false)
+  const close = () => { if (closing) return; setClosing(true); setTimeout(() => setShowQueue(false), 300) }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const upNext = queue.slice(queueIndex + 1)
   const played = queue.slice(0, queueIndex)
@@ -38,10 +46,10 @@ export function QueuePanel() {
   }
 
   return (
-    <div className="track-page-backdrop fixed inset-0 z-50 flex items-end justify-center"
-      onClick={() => setShowQueue(false)}>
+    <div className={`track-page-backdrop fixed inset-0 z-50 flex items-end justify-center ${closing ? 'closing' : ''}`}
+      onClick={close}>
       <div
-        className="track-page-panel glass-island w-full rounded-t-3xl flex flex-col"
+        className={`track-page-panel glass-island w-full rounded-t-3xl flex flex-col ${closing ? 'closing' : ''}`}
         style={{ height: '88%' }}
         onClick={e => e.stopPropagation()}
       >
@@ -51,14 +59,29 @@ export function QueuePanel() {
             <h2 className="text-base font-bold text-white/90 tracking-wide">{t('queue')}</h2>
             <p className="text-xs text-white/35 mt-0.5">{queue.length} {t('tracksWord')}</p>
           </div>
-          <button
-            onClick={() => setShowQueue(false)}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/8 transition-all"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            {queue.length > 1 && (
+              <button
+                onClick={clearQueue}
+                title={t('clearQueue')}
+                className="flex items-center gap-1.5 px-2.5 h-8 rounded-full text-xs font-medium text-white/55 hover:text-white transition-all"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                </svg>
+                {t('clearQueue')}
+              </button>
+            )}
+            <button
+              onClick={close}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/8 transition-all"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Scrollable list */}
@@ -176,6 +199,7 @@ function TrackRow({ track, isCurrent, faded, accentHex, dragOver, onDragStart, o
   onRemove: () => void
 }) {
   const [hovered, setHovered] = useState(false)
+  const { setContextMenu } = useUI()
   const art = sc.formatArtwork(track.artwork_url || track.user?.avatar_url, 't67x67')
 
   return (
@@ -185,6 +209,7 @@ function TrackRow({ track, isCurrent, faded, accentHex, dragOver, onDragStart, o
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track }) }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className="flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 group"

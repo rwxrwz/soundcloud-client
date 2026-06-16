@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, safeStorage } from 'electron'
 import { join } from 'path'
-import { writeFileSync, readFileSync, existsSync, unlinkSync } from 'fs'
+import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync, readdirSync } from 'fs'
 import { Client } from '@xhayper/discord-rpc'
 
 const ICON_PATH = join(__dirname, '../../buildResources/icon_rounded.ico')
@@ -13,6 +13,7 @@ let mainWindow: BrowserWindow | null = null
 let miniWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let closeToTray = true   // when false, closing the window quits the app
 let lastPlayerState: unknown = null
 // Hidden SC-context window — kept alive after auth so DataDome cookies stay valid
 let scProxy: BrowserWindow | null = null
@@ -109,9 +110,9 @@ function createMainWindow(): void {
 
   // Minimize behaves normally (to taskbar). Only close hides to tray.
 
-  // Hide to tray on close (unless actually quitting)
+  // Hide to tray on close (unless actually quitting or the user opted out)
   mainWindow.on('close', (e: Electron.Event) => {
-    if (!isQuitting) {
+    if (!isQuitting && closeToTray) {
       e.preventDefault()
       mainWindow?.hide()
     }
@@ -311,6 +312,23 @@ ipcMain.handle('secure-get-token', () => {
   } catch { return '' }
 })
 
+// ── Video wallpapers ────────────────────────────────────────────────────────
+// Users drop .mp4/.webm files into userData/wallpapers; we scan + list them.
+const wallpapersDir = () => {
+  const dir = join(app.getPath('userData'), 'wallpapers')
+  try { mkdirSync(dir, { recursive: true }) } catch { /* ignore */ }
+  return dir
+}
+ipcMain.handle('wallpapers-dir', () => wallpapersDir())
+ipcMain.handle('wallpapers-open', () => shell.openPath(wallpapersDir()))
+ipcMain.handle('wallpapers-list', () => {
+  try {
+    return readdirSync(wallpapersDir())
+      .filter(f => /\.(mp4|webm)$/i.test(f))
+      .map(f => ({ name: f.replace(/\.[^.]+$/, ''), path: join(wallpapersDir(), f) }))
+  } catch { return [] }
+})
+
 ipcMain.handle('open-mini-player', () => createMiniWindow())
 ipcMain.handle('close-mini-player', () => { miniWindow?.close(); miniWindow = null })
 ipcMain.handle('toggle-devtools', () => mainWindow?.webContents.toggleDevTools())
@@ -324,6 +342,15 @@ ipcMain.handle('window-maximize', () => {
   mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
 })
 ipcMain.handle('window-close', () => mainWindow?.close())
+
+// System: close-button behaviour (hide to tray vs quit)
+ipcMain.handle('set-close-to-tray', (_, enabled: boolean) => { closeToTray = !!enabled })
+
+// System: launch the app on Windows login
+ipcMain.handle('set-login-item', (_, enabled: boolean) => {
+  app.setLoginItemSettings({ openAtLogin: !!enabled })
+})
+ipcMain.handle('get-login-item', () => app.getLoginItemSettings().openAtLogin)
 
 // Discord Rich Presence enable/disable from renderer settings
 ipcMain.handle('set-discord-rpc', async (_, enabled: boolean) => {
@@ -436,8 +463,9 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  // Don't quit — app lives in the tray. Only quit via tray menu.
-  if (process.platform !== 'darwin' && isQuitting) app.quit()
+  // Normally the app lives in the tray; quit when actually quitting or when the
+  // user disabled "hide to tray on close".
+  if (process.platform !== 'darwin' && (isQuitting || !closeToTray)) app.quit()
 })
 
 app.on('before-quit', () => { isQuitting = true; disconnectRpc() })

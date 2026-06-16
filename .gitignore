@@ -21,3 +21,9 @@ Thumbs.db
 .env
 .env.local
 *.local
+
+# Project-local / not for VCS
+CONTEXT_HANDOFF.md
+buildResources/brand/
+*.tsbuildinfo
+CHANGELOG.md

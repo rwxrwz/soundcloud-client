@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePlayer, useUI, useToast } from '../store'
+import { sc } from '../services/soundcloud'
 import { useT } from '../i18n'
+
+function fmt(n?: number) {
+  if (!n) return '0'
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace('.0', '') + 'M'
+  if (n >= 1e3) return (n / 1e3).toFixed(1).replace('.0', '') + 'K'
+  return String(n)
+}
 
 export function ContextMenu() {
   const { contextMenu, setContextMenu, setArtistPage, setPlaylistPickerTrack, setShowTrackPage, setShowQueue } = useUI()
@@ -104,6 +112,23 @@ export function ContextMenu() {
       }}
       onClick={e => e.stopPropagation()}
     >
+      {/* Track info header */}
+      <div className="px-3 pt-2.5 pb-2.5 mb-1 flex gap-2.5 border-b border-white/8" style={{ minWidth: 248 }}>
+        <img
+          src={sc.formatArtwork(track.artwork_url || track.user?.avatar_url, 't200x200')}
+          alt="" className="w-11 h-11 rounded-lg object-cover bg-white/5 shrink-0"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold text-white/90 truncate">{track.title}</p>
+          <p className="text-[11px] text-white/40 truncate">{track.user?.username}</p>
+          <div className="flex items-center gap-2 mt-1 text-[10px] text-white/45">
+            <Stat v={fmt(track.playback_count)} d="M8 5v14l11-7z" fill />
+            <Stat v={fmt(track.likes_count)} d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 10-7.8 7.8l1 1.1L12 21.2l7.8-7.8 1-1.1a5.5 5.5 0 000-7.7z" />
+            <Stat v={fmt(track.reposts_count)} d="M17 1l4 4-4 4M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 01-4 4H3" />
+            <Stat v={fmt(track.comment_count)} d="M21 11.5a8.4 8.4 0 01-9 8.4 8.4 8.4 0 01-3.7-.8L3 21l1.9-5.3A8.4 8.4 0 1121 11.5z" />
+          </div>
+        </div>
+      </div>
       {items.map((it, i) =>
         'divider' in it ? (
           <div key={i} className="my-1 h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
@@ -121,6 +146,17 @@ export function ContextMenu() {
         )
       )}
     </div>
+  )
+}
+
+function Stat({ v, d, fill }: { v: string; d: string; fill?: boolean }) {
+  return (
+    <span className="flex items-center gap-0.5">
+      <svg className="w-3 h-3" viewBox="0 0 24 24" fill={fill ? 'currentColor' : 'none'} stroke={fill ? 'none' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d={d} />
+      </svg>
+      {v}
+    </span>
   )
 }
 
