@@ -34,10 +34,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   scWrite: (method: string, url: string, body: unknown, oauthToken: string) =>
     ipcRenderer.invoke('sc-write', method, url, body, oauthToken),
 
-  // GET API: proxies through main process to bypass Chromium header restrictions
-  scGet: (url: string, oauthToken: string) =>
-    ipcRenderer.invoke('sc-get', url, oauthToken),
-
   // Custom window controls
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),

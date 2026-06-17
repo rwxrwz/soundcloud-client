@@ -171,7 +171,7 @@ export function Player() {
         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 0 }}>
           <video
             key={wallpaperPath}
-            src={encodeURI(`file:///${wallpaperPath.replace(/\\/g, '/')}`)}
+            src={`scwall://media/${encodeURIComponent(wallpaperPath.split(/[\\/]/).pop() || '')}`}
             autoPlay loop muted playsInline
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />

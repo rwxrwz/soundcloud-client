@@ -16,7 +16,7 @@ function fmt(s: number): string {
 
 export function HomePlayer() {
   const { currentTrack, isPlaying, progress, duration, setPlaying, nextTrack, prevTrack, shuffle, repeat, toggleShuffle, toggleRepeat, seekTo } = usePlayer()
-  const { artRgb, setPage, setShowTrackPage, setArtistPage, setContextMenu } = useUI()
+  const { artRgb, setPage, goToPlaylists, setShowTrackPage, setArtistPage, setContextMenu } = useUI()
   const { fsLayout, fsShowLyrics, fsBeatGlow, fsArtCrossfade, lyricsFontScale } = useSettings()
   const accentHex = useAccentHex()
   const t = useT()
@@ -46,11 +46,18 @@ export function HomePlayer() {
           <svg className="w-9 h-9 text-white/20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z"/></svg>
         </div>
         <p className="text-sm text-white/40">{t('nothingPlaying')}</p>
-        <button onClick={() => setPage('likes')}
-          className="px-5 py-2 rounded-full text-sm font-semibold text-white transition-all active:scale-95"
-          style={{ background: 'var(--accent)', boxShadow: '0 4px 18px rgba(var(--accent-rgb),0.4)' }}>
-          {t('browseLibrary')}
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button onClick={() => setPage('likes')}
+            className="px-5 py-2 rounded-full text-sm font-semibold text-white transition-all active:scale-95"
+            style={{ background: 'var(--accent)', boxShadow: '0 4px 18px rgba(var(--accent-rgb),0.4)' }}>
+            {t('browseLibrary')}
+          </button>
+          <button onClick={goToPlaylists}
+            className="px-5 py-2 rounded-full text-sm font-semibold text-white transition-all active:scale-95"
+            style={{ background: 'var(--accent)', boxShadow: '0 4px 18px rgba(var(--accent-rgb),0.4)' }}>
+            {t('browsePlaylists')}
+          </button>
+        </div>
       </div>
     )
   }

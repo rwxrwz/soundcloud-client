@@ -19,7 +19,6 @@ declare global {
       playerControl: (action: { type: string; payload?: unknown }) => void
       onPlayerCommand: (cb: (action: { type: string; payload?: unknown }) => void) => (() => void)
       scWrite: (method: string, url: string, body: unknown, oauthToken: string) => Promise<unknown>
-      scGet: (url: string, oauthToken: string) => Promise<unknown>
       windowMinimize: () => Promise<void>
       windowMaximize: () => Promise<void>
       windowClose: () => Promise<void>

@@ -39,6 +39,7 @@ const DICT: Dict = {
   queueEmpty:    { ru: 'Очередь пуста', en: 'Queue is empty' },
   nowPlaying:    { ru: 'Сейчас играет', en: 'Now playing' },
   browseLibrary: { ru: 'Открыть лайки', en: 'Browse likes' },
+  browsePlaylists:{ ru: 'Открыть плейлисты', en: 'Browse playlists' },
   upNext:        { ru: 'Следующие', en: 'Up next' },
   played:        { ru: 'Прослушано', en: 'Played' },
 

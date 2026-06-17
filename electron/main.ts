@@ -1,5 +1,5 @@
-import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, safeStorage } from 'electron'
-import { join } from 'path'
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, safeStorage, protocol } from 'electron'
+import { join, relative, isAbsolute } from 'path'
 import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync, readdirSync } from 'fs'
 import { Client } from '@xhayper/discord-rpc'
 
@@ -17,6 +17,41 @@ let closeToTray = true   // when false, closing the window quits the app
 let lastPlayerState: unknown = null
 // Hidden SC-context window — kept alive after auth so DataDome cookies stay valid
 let scProxy: BrowserWindow | null = null
+
+// Custom scheme for serving local video wallpapers while webSecurity is on
+// (a file:// page/origin can't load arbitrary file:// resources). Must be
+// registered before the app is ready.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'scwall', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
+])
+
+// Accept IPC only from our own renderer windows (file:// in prod, dev URL in dev).
+function isTrustedSender(e: Electron.IpcMainInvokeEvent): boolean {
+  const u = e.senderFrame?.url ?? ''
+  return u.startsWith('file://') || (!!process.env.ELECTRON_RENDERER_URL && u.startsWith(process.env.ELECTRON_RENDERER_URL))
+}
+
+// Only ever attach the OAuth token / SC session cookies to genuine SoundCloud hosts.
+function assertScUrl(raw: string): void {
+  const u = new URL(raw)
+  if (u.protocol !== 'https:' || !/(^|\.)soundcloud\.com$/.test(u.hostname)) {
+    throw new Error('blocked non-SoundCloud host')
+  }
+}
+
+// Lock a hidden SC window to soundcloud.com navigation; send any other link to the OS browser.
+function hardenScWindow(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!/^https:\/\/([a-z0-9-]+\.)*soundcloud\.com(\/|$)/i.test(url)) {
+      e.preventDefault()
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+    }
+  })
+}
 
 // ── Discord Rich Presence ───────────────────────────────────────────────────
 let rpc: Client | null = null
@@ -82,9 +117,28 @@ function createMainWindow(): void {
       preload: join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false
+      sandbox: true,
+      webSecurity: true
     }
   })
+
+  // With webSecurity on, cross-origin SoundCloud media (for Web Audio) and API
+  // reads need permissive CORS headers — inject them for SC/LRCLIB hosts only.
+  mainWindow.webContents.session.webRequest.onHeadersReceived(
+    { urls: ['*://*.sndcdn.com/*', '*://*.soundcloud.com/*', '*://lrclib.net/*'] },
+    (details, callback) => {
+      const headers = details.responseHeaders || {}
+      // Drop any CORS headers the origin already sent (any casing) so we don't
+      // end up with duplicates like "Access-Control-Allow-Origin: *, *".
+      for (const key of Object.keys(headers)) {
+        if (key.toLowerCase().startsWith('access-control-allow-')) delete headers[key]
+      }
+      headers['Access-Control-Allow-Origin'] = ['*']
+      headers['Access-Control-Allow-Headers'] = ['*']
+      headers['Access-Control-Allow-Methods'] = ['*']
+      callback({ responseHeaders: headers })
+    }
+  )
 
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -142,6 +196,7 @@ function createMiniWindow(): void {
       preload: join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       // Mini window only renders IPC-fed state + artwork images — no cross-origin
       // fetches — so web security can stay on here.
       webSecurity: true
@@ -201,6 +256,7 @@ ipcMain.handle('sc-get-client-id', () => {
       show: false,
       webPreferences: { nodeIntegration: false, contextIsolation: true }
     })
+    hardenScWindow(win)
     let found = false
     win.webContents.session.webRequest.onBeforeSendHeaders(
       { urls: ['*://api-v2.soundcloud.com/*', '*://api.soundcloud.com/*'] },
@@ -234,12 +290,15 @@ async function ensureScProxy(): Promise<BrowserWindow> {
     // in the page's main world, which is unaffected by isolation.
     webPreferences: { nodeIntegration: false, contextIsolation: true }
   })
+  hardenScWindow(scProxy)
   await scProxy.loadURL('https://soundcloud.com')
   scProxy.on('closed', () => { scProxy = null })
   return scProxy
 }
 
-ipcMain.handle('sc-write', async (_, method: string, url: string, body: unknown, oauthToken: string) => {
+ipcMain.handle('sc-write', async (event, method: string, url: string, body: unknown, oauthToken: string) => {
+  if (!isTrustedSender(event)) throw new Error('untrusted sender')
+  assertScUrl(url)
   const proxy = await ensureScProxy()
 
   // Encode body as base64 to transport it into the page without any escaping issues
@@ -266,26 +325,12 @@ ipcMain.handle('sc-write', async (_, method: string, url: string, body: unknown,
   return proxy.webContents.executeJavaScript(code)
 })
 
-ipcMain.handle('sc-get', async (_, url: string, oauthToken: string) => {
-  const proxy = await ensureScProxy()
-  const code = `
-    (async () => {
-      const res = await fetch(${JSON.stringify(url)}, {
-        credentials: 'include',
-        headers: { 'Authorization': ${JSON.stringify('OAuth ' + oauthToken)} }
-      })
-      if (!res.ok) throw new Error('HTTP ' + res.status)
-      return res.json()
-    })()
-  `
-  return proxy.webContents.executeJavaScript(code)
-})
-
 // ── Secure token storage (OS keychain via safeStorage) ──────────────────────
 // Keeps the OAuth token out of localStorage; encrypted at rest with DPAPI/keychain.
 const tokenFile = () => join(app.getPath('userData'), 'sc-token.bin')
 
-ipcMain.handle('secure-set-token', (_, token: string) => {
+ipcMain.handle('secure-set-token', (event, token: string) => {
+  if (!isTrustedSender(event)) return false
   try {
     if (!token) {
       if (existsSync(tokenFile())) unlinkSync(tokenFile())
@@ -302,11 +347,11 @@ ipcMain.handle('secure-set-token', (_, token: string) => {
   } catch { return false }
 })
 
-ipcMain.handle('secure-get-token', () => {
+ipcMain.handle('secure-get-token', (event) => {
+  if (!isTrustedSender(event)) return ''
   try {
     if (!existsSync(tokenFile())) return ''
     const buf = readFileSync(tokenFile())
-    if (buf.subarray(0, 6).toString('utf8') === 'plain:') return buf.subarray(6).toString('utf8')
     if (safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(buf)
     return ''
   } catch { return '' }
@@ -331,7 +376,7 @@ ipcMain.handle('wallpapers-list', () => {
 
 ipcMain.handle('open-mini-player', () => createMiniWindow())
 ipcMain.handle('close-mini-player', () => { miniWindow?.close(); miniWindow = null })
-ipcMain.handle('toggle-devtools', () => mainWindow?.webContents.toggleDevTools())
+ipcMain.handle('toggle-devtools', () => { if (process.env.ELECTRON_RENDERER_URL) mainWindow?.webContents.toggleDevTools() })
 ipcMain.handle('show-main-window', () => { mainWindow?.show(); mainWindow?.focus() })
 ipcMain.handle('get-player-state', () => lastPlayerState)
 
@@ -347,7 +392,8 @@ ipcMain.handle('window-close', () => mainWindow?.close())
 ipcMain.handle('set-close-to-tray', (_, enabled: boolean) => { closeToTray = !!enabled })
 
 // System: launch the app on Windows login
-ipcMain.handle('set-login-item', (_, enabled: boolean) => {
+ipcMain.handle('set-login-item', (event, enabled: boolean) => {
+  if (!isTrustedSender(event)) return
   app.setLoginItemSettings({ openAtLogin: !!enabled })
 })
 ipcMain.handle('get-login-item', () => app.getLoginItemSettings().openAtLogin)
@@ -453,6 +499,19 @@ ipcMain.handle('sc-auth', async () => {
 })
 
 app.whenReady().then(() => {
+  // Serve video wallpapers from userData/wallpapers via scwall://media/<file>,
+  // constrained to the wallpapers dir (no arbitrary local-file reads).
+  protocol.registerFileProtocol('scwall', (request, callback) => {
+    try {
+      const name = decodeURIComponent(new URL(request.url).pathname.replace(/^\/+/, ''))
+      const dir = wallpapersDir()
+      const full = join(dir, name)
+      const rel = relative(dir, full)
+      if (rel.startsWith('..') || isAbsolute(rel)) { callback({ error: -10 }); return }
+      callback({ path: full })
+    } catch { callback({ error: -6 }) }
+  })
+
   createMainWindow()
   createTray()
   app.on('activate', () => {

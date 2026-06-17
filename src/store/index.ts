@@ -410,6 +410,8 @@ export const useSettings = create<SettingsState>()(
         }
         for (const key of Object.keys(SETTINGS_DEFAULTS) as (keyof typeof SETTINGS_DEFAULTS)[]) {
           if (!(key in d)) continue
+          // Never import a machine-specific local wallpaper path from a foreign file
+          if (key === 'wallpaperPath') continue
           const val = d[key]
           const def = SETTINGS_DEFAULTS[key]
           if (val === undefined || val === null) continue
