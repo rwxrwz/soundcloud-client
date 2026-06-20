@@ -4,7 +4,7 @@
 
 **Unofficial SoundCloud desktop client for Windows**
 
-A custom player with likes, playlists, follows, a releases feed, synced lyrics, an equalizer, a mini-player, themes and a full fullscreen player mode.
+A custom player with likes, playlists, follows, a releases feed, synced lyrics, an equalizer, a mini-player, themes and a fullscreen player mode.
 
 ![Electron](https://img.shields.io/badge/Electron-32-47848F?logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
@@ -94,7 +94,7 @@ Unofficial app, not affiliated with or endorsed by SoundCloud. It works through 
 
 **Неофициальный десктоп-клиент SoundCloud для Windows**
 
-Собственный плеер с лайками, плейлистами, подписками, лентой релизов, синхронизированным текстом, эквалайзером, мини-плеером, темами и полноэкранным режимом плеера.
+Полноценный плеер: лайки, плейлисты, подписки, лента релизов, синхронизированный текст, эквалайзер, мини-плеер, темы и полноэкранный режим.
 
 [English](#-soundcloud-desktop-player) · **Русский**
 
