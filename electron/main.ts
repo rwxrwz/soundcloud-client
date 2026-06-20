@@ -39,20 +39,6 @@ function assertScUrl(raw: string): void {
   }
 }
 
-// Lock a hidden SC window to soundcloud.com navigation; send any other link to the OS browser.
-function hardenScWindow(win: BrowserWindow): void {
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
-    return { action: 'deny' }
-  })
-  win.webContents.on('will-navigate', (e, url) => {
-    if (!/^https:\/\/([a-z0-9-]+\.)*soundcloud\.com(\/|$)/i.test(url)) {
-      e.preventDefault()
-      if (/^https?:\/\//i.test(url)) shell.openExternal(url)
-    }
-  })
-}
-
 // ── Discord Rich Presence ───────────────────────────────────────────────────
 let rpc: Client | null = null
 let rpcReady = false
@@ -122,14 +108,18 @@ function createMainWindow(): void {
     }
   })
 
-  // With webSecurity on, cross-origin SoundCloud media (for Web Audio) and API
-  // reads need permissive CORS headers — inject them for SC/LRCLIB hosts only.
+  // With webSecurity on, the renderer's cross-origin reads (api-v2 with an
+  // Authorization header → preflight) and media (Web Audio) need permissive CORS.
+  // Apply this ONLY to requests from the main window — never to the scProxy window,
+  // whose like/playlist writes use credentials:'include' and rely on api-v2's own
+  // origin-specific CORS (which '*' would break).
+  const mainWcId = mainWindow.webContents.id
   mainWindow.webContents.session.webRequest.onHeadersReceived(
     { urls: ['*://*.sndcdn.com/*', '*://*.soundcloud.com/*', '*://lrclib.net/*'] },
     (details, callback) => {
+      if (details.webContentsId !== mainWcId) { callback({}); return }
       const headers = details.responseHeaders || {}
-      // Drop any CORS headers the origin already sent (any casing) so we don't
-      // end up with duplicates like "Access-Control-Allow-Origin: *, *".
+      // Replace any existing CORS headers (any casing) to avoid "*, *" duplicates.
       for (const key of Object.keys(headers)) {
         if (key.toLowerCase().startsWith('access-control-allow-')) delete headers[key]
       }
@@ -256,7 +246,6 @@ ipcMain.handle('sc-get-client-id', () => {
       show: false,
       webPreferences: { nodeIntegration: false, contextIsolation: true }
     })
-    hardenScWindow(win)
     let found = false
     win.webContents.session.webRequest.onBeforeSendHeaders(
       { urls: ['*://api-v2.soundcloud.com/*', '*://api.soundcloud.com/*'] },
@@ -290,7 +279,6 @@ async function ensureScProxy(): Promise<BrowserWindow> {
     // in the page's main world, which is unaffected by isolation.
     webPreferences: { nodeIntegration: false, contextIsolation: true }
   })
-  hardenScWindow(scProxy)
   await scProxy.loadURL('https://soundcloud.com')
   scProxy.on('closed', () => { scProxy = null })
   return scProxy

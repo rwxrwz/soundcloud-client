@@ -21,6 +21,8 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
   const firstLoadRef = useRef(true)
   const earlyRef = useRef(false)   // we advanced early to start a crossfade tail
   const drmSkipRef = useRef(0)     // consecutive DRM auto-skips (loop guard)
+  const pauseTimers = useRef<(ReturnType<typeof setTimeout> | null)[]>([null, null]) // per-channel deferred pause
+  const loadSeqRef = useRef(0)     // guards against out-of-order async track loads
 
   const { currentTrack, isPlaying, volume, setProgress, setDuration, nextTrack, repeat, seekRequest } = usePlayer()
   const { show: showToast } = useToast()
@@ -156,7 +158,12 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
       usePlayer.getState().setPlaying(false)
     }
 
+    // Token to ignore out-of-order resolutions when tracks are switched quickly:
+    // only the most recent load is allowed to touch the audio graph.
+    const myLoad = ++loadSeqRef.current
+
     sc.getStreamUrl(currentTrack).then((url: string) => {
+      if (myLoad !== loadSeqRef.current) return  // superseded by a newer track change
       el.src = url
       el.load()
       el.volume = usePlayer.getState().volume
@@ -179,8 +186,13 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
       const now = ctx.currentTime
       const playing = usePlayer.getState().isPlaying
 
+      // The incoming channel becomes active — cancel any deferred pause queued
+      // for it from a previous crossfade, or it would silence the new track.
+      if (pauseTimers.current[targetCh]) { clearTimeout(pauseTimers.current[targetCh]!); pauseTimers.current[targetCh] = null }
+
       if (crossfading) {
-        const inG = chs[targetCh]!, outG = chs[activeRef.current]!
+        const oldCh = activeRef.current
+        const inG = chs[targetCh]!, outG = chs[oldCh]!
         inG.gain.cancelScheduledValues(now)
         inG.gain.setValueAtTime(Math.max(inG.gain.value, 0.0001), now)
         inG.gain.linearRampToValueAtTime(1, now + cf)
@@ -188,15 +200,19 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
         outG.gain.setValueAtTime(Math.max(outG.gain.value, 0.0001), now)
         outG.gain.linearRampToValueAtTime(0.0001, now + cf)
         if (playing) el.play().catch(handlePlayErr)
-        const oldCh = activeRef.current
         activeRef.current = targetCh
         earlyRef.current = false
         const oldEl = elemsRef.current[oldCh]
-        setTimeout(() => { try { oldEl.pause(); oldEl.currentTime = 0 } catch {} }, cf * 1000 + 150)
+        pauseTimers.current[oldCh] = setTimeout(() => {
+          pauseTimers.current[oldCh] = null
+          // Only pause if this channel wasn't re-adopted as the active track meanwhile.
+          if (activeRef.current !== oldCh) { try { oldEl.pause(); oldEl.currentTime = 0 } catch {} }
+        }, cf * 1000 + 150)
       } else {
         chs[targetCh]?.gain.cancelScheduledValues(now)
         chs[targetCh]?.gain.setValueAtTime(1, now)
         const other = (targetCh + 1) % 2
+        if (pauseTimers.current[other]) { clearTimeout(pauseTimers.current[other]!); pauseTimers.current[other] = null }
         chs[other]?.gain.cancelScheduledValues(now)
         chs[other]?.gain.setValueAtTime(0.0001, now)
         try { elemsRef.current[other]?.pause() } catch {}
@@ -207,6 +223,7 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
       analyserRef.current = analyserNodeRef.current
       audioBus.analyser = analyserNodeRef.current
     }).catch((err: Error) => {
+      if (myLoad !== loadSeqRef.current) return  // superseded — ignore stale error
       earlyRef.current = false
       console.error('getStreamUrl failed:', err?.message, 'track:', currentTrack?.title)
       const reason = err?.message === 'DRM'

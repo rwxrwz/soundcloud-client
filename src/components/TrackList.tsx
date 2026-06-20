@@ -88,10 +88,17 @@ export function TrackList() {
     const id = playlist.id
     if (playlistCache.has(id) || hydratingSet.has(id)) return
     const stubs = playlist.tracks ?? []
-    const needsHydration = stubs.some(t => !t.title || !t.duration)
+    // The user-playlists listing can carry a truncated `tracks` array (shorter than
+    // track_count) — refetch the authoritative full list so newest tracks aren't lost.
+    const needFull = id > 0 && stubs.length < (playlist.track_count ?? stubs.length)
+    const needsHydration = needFull || stubs.some(t => !t.title || !t.duration)
     if (!needsHydration) { playlistCache.set(id, stubs); return }
     hydratingSet.add(id)
-    sc.hydratePlaylistTracks(stubs)
+    const load = needFull
+      ? sc.getPlaylist(id).then(full => full.tracks ?? [])
+      : Promise.resolve(stubs)
+    load
+      .then(list => sc.hydratePlaylistTracks(list))
       .then(tracks => { playlistCache.set(id, tracks); hydratingSet.delete(id) })
       .catch(() => hydratingSet.delete(id))
   }
@@ -130,18 +137,24 @@ export function TrackList() {
   useEffect(() => {
     if (page !== 'playlist-detail' || !selectedPlaylist) { setHydratedTracks([]); return }
     const id = selectedPlaylist.id
+    const expected = selectedPlaylist.track_count ?? 0
 
+    // Use cache only if it's complete — a truncated listing must be refetched.
     const cached = playlistCache.get(id)
-    if (cached) { setHydratedTracks(cached); return }
+    if (cached && (id < 0 || cached.length >= expected)) { setHydratedTracks(cached); return }
 
-    // Not cached yet — hydrate now and show spinner
     const stubs = selectedPlaylist.tracks ?? []
-    const needsHydration = stubs.some(t => !t.title || !t.duration)
+    const needFull = id > 0 && stubs.length < expected
+    const needsHydration = needFull || stubs.some(t => !t.title || !t.duration)
     if (!needsHydration) { playlistCache.set(id, stubs); setHydratedTracks(stubs); return }
 
     setHydrating(true)
     hydratingSet.add(id)
-    sc.hydratePlaylistTracks(stubs)
+    const load = needFull
+      ? sc.getPlaylist(id).then(full => full.tracks ?? [])
+      : Promise.resolve(stubs)
+    load
+      .then(list => sc.hydratePlaylistTracks(list))
       .then(tracks => {
         playlistCache.set(id, tracks)
         hydratingSet.delete(id)
