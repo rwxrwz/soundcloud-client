@@ -3,7 +3,7 @@ import { useProfile } from '../store'
 import { sc } from '../services/soundcloud'
 
 export function useSync() {
-  const { user, clientId, oauthToken, setLikes, setPlaylists, setStream, setFollowingIds } = useProfile()
+  const { user, clientId, oauthToken, setLikes, setPlaylists, setLikedPlaylists, setStream, setFollowingIds } = useProfile()
 
   useEffect(() => {
     if (!user || !clientId) return
@@ -28,6 +28,10 @@ export function useSync() {
       try {
         const f = await sc.getFollowings(user.id, 200)
         setFollowingIds((f.collection ?? []).map(u => u.id))
+      } catch { /* ignore */ }
+      // Liked (foreign) playlists — separate, non-blocking
+      try {
+        setLikedPlaylists(await sc.getLikedPlaylists(user.id))
       } catch { /* ignore */ }
     }
 

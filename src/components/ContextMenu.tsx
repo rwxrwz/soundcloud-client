@@ -11,7 +11,7 @@ function fmt(n?: number) {
 }
 
 export function ContextMenu() {
-  const { contextMenu, setContextMenu, setArtistPage, setPlaylistPickerTrack, setShowTrackPage, setShowQueue } = useUI()
+  const { contextMenu, setContextMenu, setArtistPage, setPlaylistPickerTrack, setShowTrackPage, setShowQueue, setSelectedAlbum } = useUI()
   const { setTrack } = usePlayer()
   const { show: showToast } = useToast()
   const t = useT()
@@ -79,7 +79,7 @@ export function ContextMenu() {
     {
       label: t('ctxGoArtist'),
       icon: <IcoStroke><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></IcoStroke>,
-      onClick: () => { if (track.user) { setShowTrackPage(false); setShowQueue(false); setArtistPage(track.user) } },
+      onClick: () => { if (track.user) { setShowTrackPage(false); setShowQueue(false); setSelectedAlbum(null); setArtistPage(track.user) } },
     },
     {
       label: t('ctxCopyLink'),

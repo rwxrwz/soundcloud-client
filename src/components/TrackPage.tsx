@@ -68,7 +68,7 @@ export function TrackPage() {
         </div>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6" ref={commentsRef}>
+        <div className="flex-1 overflow-y-auto px-6 pb-28" ref={commentsRef}>
           {/* Top section: artwork + info */}
           <div className="flex gap-6 pt-2 pb-6">
             {/* Artwork */}
@@ -136,6 +136,7 @@ export function TrackPage() {
                 {data && <TrackActions track={data} alwaysVisible />}
               </div>
             </div>
+
           </div>
 
           {/* Description */}

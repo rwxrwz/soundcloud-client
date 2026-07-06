@@ -36,6 +36,7 @@ interface ProfileState {
   oauthToken: string
   likes: SCTrack[]
   playlists: SCPlaylist[]
+  likedPlaylists: SCPlaylist[]
   stream: SCTrack[]
   releases: SCTrack[]
   followingIds: number[]
@@ -46,6 +47,7 @@ interface ProfileState {
   setAuth: (clientId: string, token: string, user: SCUser) => void
   setLikes: (tracks: SCTrack[]) => void
   setPlaylists: (pl: SCPlaylist[]) => void
+  setLikedPlaylists: (pl: SCPlaylist[]) => void
   setStream: (tracks: SCTrack[]) => void
   setReleases: (tracks: SCTrack[]) => void
   setFollowingIds: (ids: number[]) => void
@@ -61,8 +63,10 @@ interface UIState {
   page: 'main' | 'stream' | 'releases' | 'likes' | 'playlists' | 'search' | 'playlist-detail'
   playlistsSubPage: 'playlists' | 'playlist-detail'
   selectedPlaylist: SCPlaylist | null
+  selectedAlbum: SCPlaylist | null
   searchQuery: string
   searchResults: SCTrack[]
+  searchTab: 'all' | 'tracks' | 'artists' | 'albums' | 'playlists'
   bgColor: string
   artRgb: [number, number, number]
   trackOrder: 'newest' | 'oldest'
@@ -77,14 +81,20 @@ interface UIState {
   setContextMenu: (m: { x: number; y: number; track: SCTrack } | null) => void
   playlistMenu: { x: number; y: number; playlist: SCPlaylist } | null
   setPlaylistMenu: (m: { x: number; y: number; playlist: SCPlaylist } | null) => void
+  artistMenu: { x: number; y: number; user: SCUser } | null
+  setArtistMenu: (m: { x: number; y: number; user: SCUser } | null) => void
+  albumMenu: { x: number; y: number; album: SCPlaylist } | null
+  setAlbumMenu: (m: { x: number; y: number; album: SCPlaylist } | null) => void
   showFullscreen: boolean
   setShowFullscreen: (v: boolean) => void
   setPage: (p: UIState['page']) => void
   setSelectedPlaylist: (pl: SCPlaylist) => void
+  setSelectedAlbum: (a: SCPlaylist | null) => void
   goToPlaylists: () => void
   backFromPlaylist: () => void
   setSearch: (q: string) => void
   setSearchResults: (tracks: SCTrack[]) => void
+  setSearchTab: (t: UIState['searchTab']) => void
   setBgColor: (c: string) => void
   setArtRgb: (rgb: [number, number, number]) => void
   setTrackOrder: (o: 'newest' | 'oldest') => void
@@ -207,6 +217,7 @@ export const useProfile = create<ProfileState>()(
       oauthToken: '',
       likes: [],
       playlists: [],
+      likedPlaylists: [],
       stream: [],
       releases: [],
       followingIds: [],
@@ -225,6 +236,7 @@ export const useProfile = create<ProfileState>()(
       setAuth: (clientId, oauthToken, user) => set({ clientId, oauthToken, user }),
       setLikes: (likes) => set({ likes }),
       setPlaylists: (playlists) => set({ playlists }),
+      setLikedPlaylists: (likedPlaylists) => set({ likedPlaylists }),
       setStream: (stream) => set({ stream }),
       setReleases: (releases) => set({ releases }),
       setFollowingIds: (followingIds) => set({ followingIds }),
@@ -232,7 +244,7 @@ export const useProfile = create<ProfileState>()(
       unfollowOptimistic: (id) => set(s => ({ followingIds: s.followingIds.filter(x => x !== id) })),
       logout: () => {
         try { window.electronAPI?.secureSetToken?.('') } catch { /* ignore */ }
-        set({ user: null, clientId: '', oauthToken: '', likes: [], playlists: [], stream: [], releases: [], followingIds: [], localPlaylists: [] })
+        set({ user: null, clientId: '', oauthToken: '', likes: [], playlists: [], likedPlaylists: [], stream: [], releases: [], followingIds: [], localPlaylists: [] })
       },
       likeTrackOptimistic: (track) => set(s => ({ likes: [track, ...s.likes] })),
       unlikeTrackOptimistic: (trackId) => set(s => ({ likes: s.likes.filter(t => t.id !== trackId) })),
@@ -249,7 +261,7 @@ export const useProfile = create<ProfileState>()(
       // (secure-set-token) and is rehydrated into memory on startup.
       partialize: (s) => ({
         user: s.user, clientId: s.clientId,
-        likes: s.likes, playlists: s.playlists, stream: s.stream,
+        likes: s.likes, playlists: s.playlists, likedPlaylists: s.likedPlaylists, stream: s.stream,
         followingIds: s.followingIds, localPlaylists: s.localPlaylists,
       }),
     }
@@ -494,8 +506,10 @@ export const useUI = create<UIState>()(
       page: 'main',
       playlistsSubPage: 'playlists',
       selectedPlaylist: null,
+      selectedAlbum: null,
       searchQuery: '',
       searchResults: [],
+      searchTab: 'all',
       bgColor: '#080808',
       artRgb: [80, 80, 80] as [number, number, number],
       trackOrder: 'newest',
@@ -510,14 +524,20 @@ export const useUI = create<UIState>()(
       setContextMenu: (contextMenu) => set({ contextMenu }),
       playlistMenu: null,
       setPlaylistMenu: (playlistMenu) => set({ playlistMenu }),
+      artistMenu: null,
+      setArtistMenu: (artistMenu) => set({ artistMenu }),
+      albumMenu: null,
+      setAlbumMenu: (albumMenu) => set({ albumMenu }),
       showFullscreen: false,
       setShowFullscreen: (showFullscreen) => set({ showFullscreen }),
       setPage: (page) => set({ page }),
       setSelectedPlaylist: (pl) => set({ selectedPlaylist: pl, page: 'playlist-detail', playlistsSubPage: 'playlist-detail' }),
+      setSelectedAlbum: (selectedAlbum) => set({ selectedAlbum }),
       goToPlaylists: () => set(s => ({ page: s.playlistsSubPage })),
       backFromPlaylist: () => set({ page: 'playlists', playlistsSubPage: 'playlists' }),
       setSearch: (q) => set({ searchQuery: q }),
       setSearchResults: (tracks) => set({ searchResults: tracks }),
+      setSearchTab: (searchTab) => set({ searchTab }),
       setBgColor: (c) => set({ bgColor: c }),
       setArtRgb: (artRgb) => set({ artRgb }),
       setTrackOrder: (trackOrder) => set({ trackOrder }),

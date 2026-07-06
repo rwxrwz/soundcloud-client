@@ -1,5 +1,5 @@
 ﻿import { useRef, useEffect, useState, useCallback } from 'react'
-import { usePlayer, useUI, useSettings, useAccentHex } from '../store'
+import { usePlayer, useUI, useSettings, useAccentHex, useProfile, useToast } from '../store'
 import { sc } from '../services/soundcloud'
 import { useAudio } from '../hooks/useAudio'
 import { Visualizer } from './Visualizer'
@@ -16,7 +16,24 @@ export function NowPlaying() {
   const draggingRef = useRef(false)
 
   const { currentTrack, isPlaying, volume, progress, duration, setPlaying, setVolume, nextTrack, prevTrack, repeat, shuffle, toggleRepeat, toggleShuffle, queue, playbackError } = usePlayer()
-  const { setBgColor, setArtRgb, setShowTrackPage, setArtistPage, showQueue, setShowQueue, showFullscreen, setShowFullscreen } = useUI()
+  const { setBgColor, setArtRgb, setShowTrackPage, setArtistPage, showQueue, setShowQueue, showFullscreen, setShowFullscreen, setPlaylistPickerTrack, showTrackPage, artistPageUser, selectedAlbum } = useUI()
+  // Compact = the island is narrowed & floating over a browsing overlay. Hide the
+  // artwork and secondary buttons there to keep it clean.
+  const compact = !!(showTrackPage || artistPageUser || selectedAlbum)
+  const { likes, likeTrackOptimistic, unlikeTrackOptimistic } = useProfile()
+  const { show: showToast } = useToast()
+  const isLiked = !!currentTrack && likes.some(l => Number(l.id) === Number(currentTrack.id))
+  const toggleLike = () => {
+    if (!currentTrack) return
+    if (isLiked) {
+      unlikeTrackOptimistic(currentTrack.id)
+      sc.unlikeTrack(currentTrack.id).catch(() => { likeTrackOptimistic(currentTrack); showToast(t('errUnlike'), 'error') })
+    } else {
+      likeTrackOptimistic(currentTrack)
+      showToast(`${t('toastLiked')}: ${currentTrack.title}`, 'success')
+      sc.likeTrack(currentTrack.id).catch(() => { unlikeTrackOptimistic(currentTrack.id); showToast(t('errLike'), 'error') })
+    }
+  }
   const playerStyle = useSettings(s => s.playerStyle)
   // The separate fullscreen overlay is redundant when the whole home IS a player
   const openFullscreen = () => { if (playerStyle !== 'fullscreen' && currentTrack) setShowFullscreen(true) }
@@ -136,7 +153,8 @@ export function NowPlaying() {
     {showFullscreen && <FullScreenPlayer analyserRef={analyserRef} seek={seek} />}
     <div className="h-[80px] flex items-center px-5 gap-6">
       {/* â”€â”€ Left: track info â”€â”€ */}
-      <div className="flex items-center gap-3 w-60 min-w-0 shrink-0">
+      <div className={`flex items-center gap-3 min-w-0 shrink-0 ${compact ? 'w-56' : 'w-72'}`}>
+        {!compact && (
         <div
           ref={artworkDivRef}
           onClick={openFullscreen}
@@ -153,6 +171,7 @@ export function NowPlaying() {
             </div>
           )}
         </div>
+        )}
 
         {currentTrack ? (
           <div key={currentTrack.id} className="min-w-0 flex-1 track-in">
@@ -182,6 +201,37 @@ export function NowPlaying() {
           </div>
         ) : (
           <p className="text-sm text-white/30">{t('nothingPlaying')}</p>
+        )}
+
+        {currentTrack && !compact && (
+          <div className="flex items-center gap-0.5 shrink-0">
+            {/* Like */}
+            <button
+              onClick={toggleLike}
+              title={isLiked ? t('unlike') : t('like')}
+              className="p-1.5 rounded-lg transition-all duration-150 active:scale-90"
+              style={{ color: isLiked ? accentHex : 'rgba(255,255,255,0.4)' }}
+              onMouseEnter={e => { if (!isLiked) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = isLiked ? accentHex : 'rgba(255,255,255,0.4)' }}
+            >
+              <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                <path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            {/* Add to playlist */}
+            <button
+              onClick={() => setPlaylistPickerTrack(currentTrack)}
+              title={t('addToPlaylist')}
+              className="p-1.5 rounded-lg transition-all duration-150 active:scale-90"
+              style={{ color: 'rgba(255,255,255,0.4)' }}
+              onMouseEnter={e => ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)')}
+              onMouseLeave={e => ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)')}
+            >
+              <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h11M3 12h11M3 18h7M16 15v6M13 18h6"/>
+              </svg>
+            </button>
+          </div>
         )}
       </div>
 
@@ -256,7 +306,7 @@ export function NowPlaying() {
       <div className="flex flex-col items-end gap-2 w-52 shrink-0">
         <div className="flex items-center justify-end gap-1 w-full">
           <Visualizer analyserRef={analyserRef} />
-          {playerStyle !== 'fullscreen' && (
+          {!compact && playerStyle !== 'fullscreen' && (
           <button
             onClick={openFullscreen}
             title={t('fullscreen')}
@@ -270,6 +320,7 @@ export function NowPlaying() {
             </svg>
           </button>
           )}
+          {!compact && (
           <button
             onClick={() => setShowQueue(!showQueue)}
             title={t('queue')}
@@ -288,6 +339,7 @@ export function NowPlaying() {
               </span>
             )}
           </button>
+          )}
         </div>
         <div className="flex items-center gap-2 w-full">
           <button

@@ -18,10 +18,13 @@ import { FsLivingBg } from '../components/FsLivingBg'
 import { NowPlaying } from '../components/NowPlaying'
 import { TrackPage } from '../components/TrackPage'
 import { ArtistPage } from '../components/ArtistPage'
+import { AlbumPage } from '../components/AlbumPage'
 import { QueuePanel } from '../components/QueuePanel'
 import { PlaylistPicker } from '../components/PlaylistPicker'
 import { ContextMenu } from '../components/ContextMenu'
 import { PlaylistContextMenu } from '../components/PlaylistContextMenu'
+import { ArtistContextMenu } from '../components/ArtistContextMenu'
+import { AlbumContextMenu } from '../components/AlbumContextMenu'
 import { SettingsPanel } from '../components/SettingsPanel'
 import { HeroAnim } from '../components/HeroAnim'
 import { QuickCustomize } from '../components/QuickCustomize'
@@ -29,9 +32,13 @@ import { QueueFlyout } from '../components/QueueFlyout'
 
 export function Player() {
   const { clientId, oauthToken, user } = useProfile()
-  const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, showQueue, showSettings, setShowSettings, page } = useUI()
+  const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, selectedAlbum, showQueue, showSettings, setShowSettings, page } = useUI()
   const { accent, bgStyle, wallpaperPath, theme, playerStyle, fsLiveBg } = useSettings()
   const fsHome = playerStyle === 'fullscreen' && page === 'main'
+  // A browsing overlay is open → the bottom island narrows and floats above it.
+  const overlayOpen = !!(showTrackPage || artistPageUser || selectedAlbum)
+  // Keep the island visible even on the fullscreen home while an overlay is open.
+  const islandOpen = !fsHome || overlayOpen
   const { isPlaying, setPlaying, currentTrack, progress, duration, volume, setVolume, seekTo, nextTrack, prevTrack } = usePlayer()
   const accentHex: string = accent === 'artwork'
     ? `#${artRgb.map(v => v.toString(16).padStart(2,'0')).join('')}`
@@ -211,19 +218,35 @@ export function Player() {
 
       {/* Controls island — kept MOUNTED always (it hosts the audio engine via
           useAudio). On the fullscreen-style home it animates closed (slide down +
-          collapse via grid-rows) instead of unmounting, so audio keeps playing. */}
+          collapse via grid-rows) instead of unmounting, so audio keeps playing.
+          When a browsing overlay (artist / track / album) is open, the island
+          morphs into a narrower liquid-glass island floating above the overlay. */}
       <div
         className="grid shrink-0"
-        style={{ gridTemplateRows: fsHome ? '0fr' : '1fr', transition: 'grid-template-rows 0.34s cubic-bezier(0.16,1,0.3,1)' }}
+        style={{
+          gridTemplateRows: islandOpen ? '1fr' : '0fr',
+          transition: 'grid-template-rows 0.34s cubic-bezier(0.16,1,0.3,1)',
+          position: 'relative',
+          zIndex: overlayOpen ? 60 : 1,
+        }}
       >
-        <div className="overflow-hidden min-h-0">
+        <div
+          className="min-h-0"
+          style={{
+            overflow: overlayOpen ? 'visible' : 'hidden',
+            paddingLeft: overlayOpen ? 'clamp(24px, 8%, 170px)' : 0,
+            paddingRight: overlayOpen ? 'clamp(24px, 8%, 170px)' : 0,
+            transition: 'padding 0.45s cubic-bezier(0.32,0.72,0,1)',
+          }}
+        >
           <div
-            className="mx-3 mt-3 mb-3 glass-island rounded-2xl relative"
+            className="mx-3 mt-3 mb-3 glass-island relative"
             style={{
-              zIndex: 1,
-              transform: fsHome ? 'translateY(16px)' : 'none',
-              opacity: fsHome ? 0 : 1,
-              transition: 'transform 0.34s cubic-bezier(0.16,1,0.3,1), opacity 0.28s ease',
+              borderRadius: overlayOpen ? 26 : 16,
+              transform: (fsHome && !overlayOpen) ? 'translateY(16px)' : 'none',
+              opacity: (fsHome && !overlayOpen) ? 0 : 1,
+              boxShadow: overlayOpen ? '0 24px 70px rgba(0,0,0,0.6)' : 'none',
+              transition: 'transform 0.34s cubic-bezier(0.16,1,0.3,1), opacity 0.28s ease, border-radius 0.45s cubic-bezier(0.32,0.72,0,1), box-shadow 0.45s ease',
             }}
           >
             <NowPlaying />
@@ -234,6 +257,7 @@ export function Player() {
       {/* Overlays */}
       {showTrackPage && <TrackPage />}
       {artistPageUser && <ArtistPage />}
+      {selectedAlbum && <AlbumPage />}
       {showQueue && <QueuePanel />}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
       {page === 'main' && <QuickCustomize />}
@@ -241,6 +265,8 @@ export function Player() {
       <PlaylistPicker />
       <ContextMenu />
       <PlaylistContextMenu />
+      <ArtistContextMenu />
+      <AlbumContextMenu />
     </div>
   )
 }

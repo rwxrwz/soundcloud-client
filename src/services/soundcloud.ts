@@ -120,6 +120,15 @@ class SoundCloudService {
     return this.get<SCCollection<SCPlaylist>>(`/users/${userId}/playlists`, { limit: 50 })
   }
 
+  // Playlists/albums the user has liked (made by other people). The endpoint wraps
+  // each item as { playlist: SCPlaylist, created_at }, like /track_likes does.
+  async getLikedPlaylists(userId: number, limit = 50): Promise<SCPlaylist[]> {
+    const res = await this.get<SCCollection<{ playlist?: SCPlaylist } | SCPlaylist>>(`/users/${userId}/playlist_likes`, { limit })
+    return (res.collection ?? [])
+      .map(item => (item as { playlist?: SCPlaylist }).playlist ?? (item as SCPlaylist))
+      .filter((p): p is SCPlaylist => !!p && typeof (p as SCPlaylist).id === 'number')
+  }
+
   async getStream(limit = 50): Promise<SCCollection<{ track: SCTrack }>> {
     return this.get(`/stream`, { limit })
   }
@@ -154,6 +163,20 @@ class SoundCloudService {
 
   async searchTracks(q: string, limit = 30): Promise<SCCollection<SCTrack>> {
     return this.get<SCCollection<SCTrack>>('/search/tracks', { q, limit })
+  }
+
+  async searchPlaylists(q: string, limit = 20): Promise<SCCollection<SCPlaylist>> {
+    return this.get<SCCollection<SCPlaylist>>('/search/playlists', { q, limit })
+  }
+
+  async searchUsers(q: string, limit = 20): Promise<SCCollection<SCUser>> {
+    return this.get<SCCollection<SCUser>>('/search/users', { q, limit })
+  }
+
+  // Albums are sets with set_type album/ep. SoundCloud exposes /search/albums;
+  // if it ever 404s, callers can fall back to searchPlaylists + set_type filter.
+  async searchAlbums(q: string, limit = 20): Promise<SCCollection<SCPlaylist>> {
+    return this.get<SCCollection<SCPlaylist>>('/search/albums', { q, limit })
   }
 
   async getPlaylist(id: number): Promise<SCPlaylist> {
@@ -217,7 +240,7 @@ class SoundCloudService {
       try {
         const res = await this.get<{ url: string }>(progressive.url.replace(API, ''))
         if (res.url) return res.url
-      } catch {}
+      } catch { /* fall through to fallback / error */ }
     }
 
     // Legacy fallback
@@ -274,6 +297,14 @@ class SoundCloudService {
 
   async unlikeTrack(trackId: number): Promise<void> {
     await this.scWrite('DELETE', `/users/${this.userId}/track_likes/${trackId}`)
+  }
+
+  async likePlaylist(playlistId: number): Promise<void> {
+    await this.scWrite('PUT', `/users/${this.userId}/playlist_likes/${playlistId}`)
+  }
+
+  async unlikePlaylist(playlistId: number): Promise<void> {
+    await this.scWrite('DELETE', `/users/${this.userId}/playlist_likes/${playlistId}`)
   }
 
   async followUser(artistId: number): Promise<void> {

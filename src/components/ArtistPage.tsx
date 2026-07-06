@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useUI, usePlayer, useProfile, useToast } from '../store'
 import { sc } from '../services/soundcloud'
+import { playlistCache } from '../services/playlistCache'
 import type { SCUser, SCTrack, SCPlaylist, SCWebProfile } from '../services/soundcloud'
 import { TrackActions } from './TrackActions'
 import { SegmentedTabs } from './SegmentedTabs'
@@ -20,7 +21,8 @@ function hostname(url: string): string {
 export function ArtistPage() {
   const { artistPageUser, setArtistPage, setContextMenu } = useUI()
   const { setTrack, currentTrack, isPlaying, setPlaying } = usePlayer()
-  const { followingIds, followOptimistic, unfollowOptimistic } = useProfile()
+  const { followingIds, followOptimistic, unfollowOptimistic, likes, playlists, localPlaylists } = useProfile()
+  const [showLibrary, setShowLibrary] = useState(false)
   const { show: showToast } = useToast()
   const t = useT()
   const [user, setUser] = useState<SCUser | null>(artistPageUser)
@@ -47,6 +49,33 @@ export function ArtistPage() {
 
   const artistId = (user ?? artistPageUser)?.id
   const isFollowing = artistId !== undefined && followingIds.includes(artistId)
+
+  // Which of this artist's tracks are in your library (likes + playlists), and
+  // for each, which playlists it lives in — Spotify-style. Best-effort: playlist
+  // membership uses hydrated tracks from the cache (populated once a playlist is
+  // opened), falling back to whatever the playlist object already carries.
+  const library = useMemo(() => {
+    const byId = new Map<number, { track: SCTrack; playlists: string[]; liked: boolean }>()
+    if (artistId === undefined) return { tracks: [], likedCount: 0, playlistCount: 0 }
+    for (const tr of likes) {
+      if (tr.user?.id === artistId) byId.set(tr.id, { track: tr, playlists: [], liked: true })
+    }
+    for (const pl of [...localPlaylists, ...playlists]) {
+      const trs = playlistCache.get(pl.id) ?? pl.tracks ?? []
+      for (const tr of trs) {
+        if (tr.user?.id !== artistId) continue
+        const e = byId.get(tr.id)
+        if (e) { if (!e.playlists.includes(pl.title)) e.playlists.push(pl.title) }
+        else byId.set(tr.id, { track: tr, playlists: [pl.title], liked: false })
+      }
+    }
+    const tracks = [...byId.values()]
+    return {
+      tracks,
+      likedCount: tracks.filter(x => x.liked).length,
+      playlistCount: tracks.filter(x => x.playlists.length > 0).length,
+    }
+  }, [artistId, likes, playlists, localPlaylists])
   const toggleFollow = () => {
     if (artistId === undefined) return
     if (isFollowing) {
@@ -102,6 +131,7 @@ export function ArtistPage() {
     }
   }
 
+
   if (!artistPageUser) return null
 
   const avatar = sc.formatArtwork(user?.avatar_url ?? artistPageUser.avatar_url, 't500x500')
@@ -133,7 +163,7 @@ export function ArtistPage() {
         </button>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-6 pt-3 pb-6">
+        <div className="flex-1 overflow-y-auto px-6 pt-3 pb-28">
           {/* Banner — full-bleed, reaches the very top edge of the panel */}
           {banner && (
             <div className="-mx-6 -mt-3 h-36 relative overflow-hidden">
@@ -252,6 +282,72 @@ export function ArtistPage() {
               <p className="text-xs text-white/50 leading-relaxed line-clamp-4">
                 {user.description}
               </p>
+            </div>
+          )}
+
+          {/* You liked (this artist's tracks you liked / added to playlists) */}
+          {library.tracks.length > 0 && (
+            <div className="mb-6 rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <button onClick={() => setShowLibrary(v => !v)}
+                className="w-full flex items-center justify-between gap-3 p-3 text-left transition-colors"
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(var(--accent-rgb),0.15)' }}>
+                    <svg className="w-4.5 h-4.5" style={{ color: 'var(--accent)' }} viewBox="0 0 24 24" fill="currentColor"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white/90">{t('inYourLibrary')}</p>
+                    <p className="text-[11px] text-white/40 mt-0.5">{library.likedCount} {t('inLikesShort')} · {library.playlistCount} {t('inPlaylistsShort')}</p>
+                  </div>
+                </div>
+                <svg className="w-4 h-4 text-white/40 shrink-0 transition-transform duration-200" style={{ transform: showLibrary ? 'rotate(180deg)' : 'none' }}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div className="album-collapse" style={{ gridTemplateRows: showLibrary ? '1fr' : '0fr', transition: 'grid-template-rows 0.42s cubic-bezier(0.65, 0, 0.35, 1)' }}>
+                <div style={{ overflow: 'hidden' }}>
+                  <div className="px-1.5 pb-2 pt-1 flex flex-col gap-0.5" style={{ opacity: showLibrary ? 1 : 0, transition: 'opacity 0.3s ease' }}>
+                    {library.tracks.map(({ track: tr, playlists: pls, liked }) => {
+                      const active = currentTrack?.id === tr.id
+                      const art = sc.formatArtwork(tr.artwork_url || tr.user?.avatar_url, 't200x200')
+                      return (
+                        <div key={tr.id} role="button"
+                          onClick={() => { if (active) setPlaying(!isPlaying); else setTrack(tr, library.tracks.map(x => x.track)) }}
+                          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track: tr }) }}
+                          className="group flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-colors"
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                          <div className="relative shrink-0 w-10 h-10 rounded-lg overflow-hidden bg-white/5">
+                            {art
+                              ? <img src={art} alt="" className="w-full h-full object-cover" />
+                              : <div className="w-full h-full flex items-center justify-center"><svg className="w-4 h-4 text-white/20" fill="currentColor" viewBox="0 0 20 20"><path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z"/></svg></div>}
+                            <div className={`absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity duration-150 ${active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                              {active && isPlaying
+                                ? <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                                : <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate" style={{ color: active ? 'var(--accent)' : 'rgba(255,255,255,0.9)' }}>{tr.title}</p>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              {liked && (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(var(--accent-rgb),0.15)', color: 'var(--accent)' }}>
+                                  <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+                                  {t('likedShort')}
+                                </span>
+                              )}
+                              {pls.map((title, i) => (
+                                <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full text-white/45 truncate max-w-[140px]" style={{ background: 'rgba(255,255,255,0.07)' }}>{title}</span>
+                              ))}
+                            </div>
+                          </div>
+                          <span className="text-xs text-white/25 shrink-0 tabular-nums">{sc.formatDuration(tr.duration)}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -524,6 +620,7 @@ function AlbumRow({ album, expanded, tracks, loading, onToggle }: {
     </div>
   )
 }
+
 
 function StatCard({ value, label, loading }: { value: string; label: string; loading: boolean }) {
   return (

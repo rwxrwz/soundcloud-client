@@ -8,15 +8,15 @@ import { CreatePlaylistModal } from './CreatePlaylistModal'
 import { ImportPlaylistModal } from './ImportPlaylistModal'
 import { ConfirmDialog } from './ConfirmDialog'
 import { MainPage } from './MainPage'
+import { SearchResults } from './SearchResults'
 import { encodePlaylist } from '../services/playlistShare'
 import { SegmentedTabs } from './SegmentedTabs'
 import { useT } from '../i18n'
 
 export function TrackList() {
-  const { likes, stream, playlists, releases, setReleases, setPlaylists, user, localPlaylists, removeLocalPlaylist } = useProfile()
-  const { page, selectedPlaylist, searchQuery, searchResults, setSearch, setSearchResults, setSelectedPlaylist, backFromPlaylist, trackOrder, setTrackOrder } = useUI()
+  const { likes, stream, playlists, likedPlaylists, setLikedPlaylists, releases, setReleases, setPlaylists, user, localPlaylists, removeLocalPlaylist } = useProfile()
+  const { page, selectedPlaylist, searchQuery, setSearch, setSelectedPlaylist, backFromPlaylist, trackOrder, setTrackOrder } = useUI()
   const { show: showToast } = useToast()
-  const [searching, setSearching] = useState(false)
   const [loadingReleases, setLoadingReleases] = useState(false)
   const [listKey, setListKey] = useState(0)
   const [hydratedTracks, setHydratedTracks] = useState<SCTrack[]>([])
@@ -118,16 +118,7 @@ export function TrackList() {
       .finally(() => setLoadingReleases(false))
   }, [page, user?.id])
 
-  // Search
-  useEffect(() => {
-    if (page !== 'search' || !searchQuery.trim()) { setSearchResults([]); return }
-    const t = setTimeout(async () => {
-      setSearching(true)
-      try { const r = await sc.searchTracks(searchQuery); setSearchResults(r.collection) }
-      finally { setSearching(false) }
-    }, 400)
-    return () => clearTimeout(t)
-  }, [searchQuery, page])
+  // Search results (tabs: all/tracks/artists/albums/playlists) live in <SearchResults/>.
 
   // Reset filters when playlist changes
   useEffect(() => { setPlaylistFilter(''); setFilterOpen(false); setLyricsOnly(false); setDrmOnly(false); setArtistFilter('') }, [selectedPlaylist?.id])
@@ -175,7 +166,7 @@ export function TrackList() {
     case 'stream':          rawTracks = stream;                                                   title = t('streamTitle'); break
     case 'releases':        rawTracks = releases;                                                 title = t('releasesTitle'); break
     case 'likes':           rawTracks = likes;                                                    title = t('likesTitle'); break
-    case 'search':          rawTracks = searchResults;                                            title = ''; break
+    case 'search':          rawTracks = [];                                                       title = ''; break
     case 'playlist-detail': rawTracks = hydratedTracks; title = selectedPlaylist?.title ?? ''; break
   }
 
@@ -201,6 +192,24 @@ export function TrackList() {
 
   const hasActiveFilter = !!(playlistFilter || artistFilter || lyricsOnly || drmOnly)
 
+  // A foreign playlist (not local, not authored by me) can be liked/unliked here.
+  const plForeign = !!selectedPlaylist && selectedPlaylist.id >= 0 && !(user && selectedPlaylist.user?.id === user.id)
+  const plLiked = !!selectedPlaylist && likedPlaylists.some(p => p.id === selectedPlaylist.id)
+  const toggleLikePlaylist = () => {
+    if (!selectedPlaylist) return
+    const target = selectedPlaylist
+    const prev = likedPlaylists
+    if (plLiked) {
+      setLikedPlaylists(prev.filter(p => p.id !== target.id))
+      showToast(t('playlistUnliked'), 'info')
+      sc.unlikePlaylist(target.id).catch(() => { setLikedPlaylists(prev); showToast(t('errUnlike'), 'error') })
+    } else {
+      setLikedPlaylists([target, ...prev])
+      showToast(t('playlistLiked'), 'success')
+      sc.likePlaylist(target.id).catch(() => { setLikedPlaylists(prev); showToast(t('errLike'), 'error') })
+    }
+  }
+
   const handleScanLyrics = async () => {
     if (scanning) { scanCancelRef.current = true; setScanning(false); return }
     setScanning(true)
@@ -220,7 +229,7 @@ export function TrackList() {
         <div className="px-5 pt-5 pb-3 shrink-0 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl font-bold text-white">{t('playlists')}</h1>
-            <p className="text-xs text-white/35 mt-0.5">{localPlaylists.length + playlists.length}</p>
+            <p className="text-xs text-white/35 mt-0.5">{localPlaylists.length + playlists.length + likedPlaylists.length}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
@@ -260,11 +269,12 @@ export function TrackList() {
           />
         )}
         <div className="flex-1 overflow-y-auto px-4 pb-4">
-          {localPlaylists.length + playlists.length === 0 ? (
+          {localPlaylists.length + playlists.length + likedPlaylists.length === 0 ? (
             <Empty text={t('noPlaylistsYet')} />
           ) : (
             <div className="grid gap-3 stagger" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 1fr))' }}>
               {[...localPlaylists, ...playlists].map(pl => <PlaylistCard key={pl.id} playlist={pl} onClick={() => setSelectedPlaylist(pl)} />)}
+              {likedPlaylists.map(pl => <PlaylistCard key={`liked-${pl.id}`} playlist={pl} liked onClick={() => setSelectedPlaylist(pl)} />)}
             </div>
           )}
         </div>
@@ -361,6 +371,22 @@ export function TrackList() {
           </button>
         )}
 
+        {/* Like/unlike (foreign playlists only) */}
+        {page === 'playlist-detail' && !filterOpen && plForeign && (
+          <button
+            onClick={toggleLikePlaylist}
+            title={plLiked ? t('unlikePlaylistAction') : t('likePlaylistAction')}
+            className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            style={{ color: plLiked ? 'var(--accent)' : 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
+            onMouseEnter={e => { if (!plLiked) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = plLiked ? 'var(--accent)' : 'rgba(255,255,255,0.4)' }}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill={plLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/>
+            </svg>
+          </button>
+        )}
+
         {/* Share playlist (copy code) */}
         {page === 'playlist-detail' && !filterOpen && tracks.length > 0 && (
           <button
@@ -377,8 +403,8 @@ export function TrackList() {
           </button>
         )}
 
-        {/* Delete playlist */}
-        {page === 'playlist-detail' && !filterOpen && (
+        {/* Delete playlist (own playlists only) */}
+        {page === 'playlist-detail' && !filterOpen && !plForeign && (
           <button
             onClick={() => setShowDeletePlaylist(true)}
             title={t('deletePlaylist')}
@@ -406,9 +432,7 @@ export function TrackList() {
             {scanning ? (
               <div className="w-3.5 h-3.5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
             ) : (
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 6h11M4 12h16M4 18h9" />
-              </svg>
+              <span className="text-[14px] font-extrabold leading-none">L</span>
             )}
           </button>
         )}
@@ -488,13 +512,15 @@ export function TrackList() {
 
       {/* List */}
       <div className="flex-1 overflow-y-auto px-3 pb-3">
-        {searching || (page === 'releases' && loadingReleases && releases.length === 0) ? (
+        {page === 'search' ? (
+          <SearchResults />
+        ) : (page === 'releases' && loadingReleases && releases.length === 0) ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <div className="w-7 h-7 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-white/30">{page === 'releases' ? t('loadingReleases') : t('searching')}</p>
+            <p className="text-sm text-white/30">{t('loadingReleases')}</p>
           </div>
         ) : tracks.length === 0 ? (
-          <Empty text={page === 'search' ? t('typeToSearch') : t('nothingHere')} />
+          <Empty text={t('nothingHere')} />
         ) : (
           <div key={listKey} className={`stagger ${page === 'releases' ? 'space-y-2' : 'space-y-0.5'}`}>
             {tracks.map(track => <TrackCard key={track.id} track={track} queue={tracks} showDate={page === 'releases'} />)}
@@ -519,7 +545,7 @@ function Empty({ text }: { text: string }) {
   )
 }
 
-function PlaylistCard({ playlist, onClick }: { playlist: SCPlaylist; onClick: () => void }) {
+function PlaylistCard({ playlist, onClick, liked }: { playlist: SCPlaylist; onClick: () => void; liked?: boolean }) {
   const tt = useT()
   const setPlaylistMenu = useUI(s => s.setPlaylistMenu)
   const art = (playlist.artwork_url ?? playlist.tracks?.[0]?.artwork_url)?.replace('-large', '-t200x200')
@@ -542,6 +568,14 @@ function PlaylistCard({ playlist, onClick }: { playlist: SCPlaylist; onClick: ()
           <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
             style={{ background: 'rgba(0,0,0,0.6)', color: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(4px)' }}>
             {tt('localBadge')}
+          </span>
+        )}
+        {liked && (
+          <span className="absolute top-1.5 left-1.5 w-6 h-6 flex items-center justify-center rounded-full"
+            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }} title={tt('likedBadge')}>
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="var(--accent)" stroke="var(--accent)" strokeWidth="2">
+              <path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </span>
         )}
       </div>
