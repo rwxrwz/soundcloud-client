@@ -41,6 +41,16 @@ A custom player with likes, playlists, follows, a releases feed, synced lyrics, 
 
 ---
 
+## 🆕 New in 1.3
+- **Tabbed search** — one box, results split into **All / Tracks / Artists / Albums / Playlists**, with a "show all" shortcut
+- **Album pages** — dedicated album view with cover, release date, genre, track count & length, and the full tracklist
+- **"You liked" on artist pages** — see which of an artist's tracks are in your likes/playlists, and which playlists each one sits in (Spotify-style)
+- **Like other people's playlists & albums** — heart them from search, the playlist/album header, or the right-click menu; they appear in your **Playlists** with a heart badge
+- **Context menu improvements** — dedicated menus for playlists, albums and artists: open, play, like/unlike, follow/unfollow, copy link, open in browser (foreign playlists show like instead of delete)
+- **Player bar** — like & add-to-playlist right from the bar
+- **Dynamic player bar** — narrows into a floating glass island when you open an artist / album / track page, then expands back
+- **Polish** — lyrics-scan button now uses the **L** mark, plus assorted fixes
+
 ## 🆕 New in 1.2
 - **Home page** with an animated background and your playlists / releases
 - **Fullscreen player style** — turns Home into a full player (3 layouts, living artwork background, beat-reactive glow, artwork crossfade, adjustable lyrics size, mini-queue flyout)
@@ -124,6 +134,16 @@ Unofficial app, not affiliated with or endorsed by SoundCloud. It works through 
 </table>
 
 ---
+
+## 🆕 Новое в 1.3
+- **Поиск по вкладкам** — одно поле, результаты разбиты на **Всё / Треки / Артисты / Альбомы / Плейлисты**, плюс «показать все»
+- **Страницы альбомов** — отдельный экран альбома: обложка, дата релиза, жанр, число треков и длительность, полный трек-лист
+- **«Тебе понравилось» на странице артиста** — видно, какие треки этого артиста у тебя в лайках и плейлистах, и в каких именно плейлистах каждый лежит (как в Spotify)
+- **Лайк чужих плейлистов и альбомов** — из поиска, из шапки плейлиста/альбома или через правый клик; появляются в твоих **Плейлистах** с бейджем-сердечком
+- **Улучшения контекстных меню** — отдельные меню для плейлистов, альбомов и артистов: открыть, слушать, лайк/анлайк, подписаться/отписаться, копировать ссылку, открыть в браузере (у чужих плейлистов вместо удаления — лайк)
+- **Нижний бар** — лайк и добавление в плейлист прямо из плеера
+- **Динамический бар плеера** — сжимается в парящий стеклянный остров, когда открываешь страницу артиста / альбома / трека, и раздвигается обратно
+- **Мелочи** — кнопка скана текстов теперь помечена буквой **L**, плюс разные фиксы
 
 ## 🆕 Новое в 1.2
 - **Главная страница** с анимацией и твоими плейлистами / релизами
