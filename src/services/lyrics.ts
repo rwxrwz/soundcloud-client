@@ -7,7 +7,7 @@ export interface LyricsResult {
 }
 
 // Strip common SoundCloud title noise to improve matching
-function cleanTitle(title: string): string {
+export function cleanTitle(title: string): string {
   return title
     .replace(/\(.*?\)|\[.*?\]/g, '')                 // (prod. X), [Free]
     .replace(/\b(prod\.?|feat\.?|ft\.?)\b.*$/i, '')  // prod/feat tails
@@ -94,12 +94,12 @@ export async function fetchLyrics(opts: {
 // A correct match is the same recording, so its duration is nearly identical.
 const DUR_TOLERANCE = 6 // seconds
 
-function norm(s: string): string {
+export function norm(s: string): string {
   return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 }
 
 // "Artist - Title" → { artist, title }. SoundCloud titles often embed the artist.
-function splitArtistTitle(raw: string): { artist?: string; title: string } {
+export function splitArtistTitle(raw: string): { artist?: string; title: string } {
   const m = raw.match(/^\s*(.+?)\s+[-–—]\s+(.+)$/)
   if (m) return { artist: m[1].trim(), title: m[2].trim() }
   return { title: raw }

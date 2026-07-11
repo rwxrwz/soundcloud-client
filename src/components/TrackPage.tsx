@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { usePlayer, useUI } from '../store'
 import { sc } from '../services/soundcloud'
 import type { SCComment, SCTrack } from '../services/soundcloud'
+import { findGeniusLink, type GeniusLink } from '../services/genius'
 import { TrackActions } from './TrackActions'
 import { useT, timeAgo } from '../i18n'
 
@@ -19,9 +20,21 @@ export function TrackPage() {
   const [track, setTrack] = useState<SCTrack | null>(null)
   const [comments, setComments] = useState<SCComment[]>([])
   const [loading, setLoading] = useState(true)
+  const [genius, setGenius] = useState<GeniusLink | null>(null)
   const commentsRef = useRef<HTMLDivElement>(null)
   const [closing, setClosing] = useState(false)
   const close = () => { if (closing) return; setClosing(true); setTimeout(() => setShowTrackPage(false), 300) }
+
+  // Resolve up-front so the button click is a direct (unblocked) window.open
+  useEffect(() => {
+    if (!currentTrack) { setGenius(null); return }
+    let cancelled = false
+    setGenius(null)
+    findGeniusLink(currentTrack.id, currentTrack.title, currentTrack.user?.username ?? '')
+      .then(link => { if (!cancelled) setGenius(link) })
+      .catch(() => { /* button stays hidden */ })
+    return () => { cancelled = true }
+  }, [currentTrack?.id])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
@@ -132,6 +145,21 @@ export function TrackPage() {
                   <span className="text-xs px-2.5 py-1 rounded-full bg-white/8 text-white/50 border border-white/10">
                     {data.genre}
                   </span>
+                )}
+                {genius && (
+                  <button
+                    onClick={() => window.open(genius.url)}
+                    title={genius.exact ? t('openGenius') : t('searchGenius')}
+                    className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors"
+                    style={{ background: 'rgba(255,255,100,0.10)', color: 'rgba(255,255,140,0.85)', border: '1px solid rgba(255,255,100,0.22)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,100,0.18)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,100,0.10)')}
+                  >
+                    <span className="font-bold leading-none">Genius</span>
+                    <svg className="w-3 h-3 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M15 3h6v6M10 14L21 3" /><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+                    </svg>
+                  </button>
                 )}
                 {data && <TrackActions track={data} alwaysVisible />}
               </div>

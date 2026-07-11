@@ -318,6 +318,8 @@ const DICT: Dict = {
   ctxGoArtist:   { ru: 'К артисту', en: 'Go to artist' },
   ctxOpenArtist: { ru: 'Открыть артиста', en: 'Open artist' },
   ctxUnfollow:   { ru: 'Отписаться', en: 'Unfollow' },
+  openGenius:    { ru: 'Открыть на Genius', en: 'Open on Genius' },
+  searchGenius:  { ru: 'Искать на Genius', en: 'Search on Genius' },
   ctxCopyLink:   { ru: 'Копировать ссылку', en: 'Copy link' },
   ctxOpenBrowser:{ ru: 'Открыть в браузере', en: 'Open in browser' },
   linkCopied:    { ru: 'Ссылка скопирована', en: 'Link copied' },

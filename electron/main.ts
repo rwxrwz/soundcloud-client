@@ -115,7 +115,7 @@ function createMainWindow(): void {
   // origin-specific CORS (which '*' would break).
   const mainWcId = mainWindow.webContents.id
   mainWindow.webContents.session.webRequest.onHeadersReceived(
-    { urls: ['*://*.sndcdn.com/*', '*://*.soundcloud.com/*', '*://lrclib.net/*'] },
+    { urls: ['*://*.sndcdn.com/*', '*://*.soundcloud.com/*', '*://lrclib.net/*', '*://genius.com/*'] },
     (details, callback) => {
       if (details.webContentsId !== mainWcId) { callback({}); return }
       const headers = details.responseHeaders || {}

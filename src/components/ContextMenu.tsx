@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePlayer, useUI, useToast } from '../store'
 import { sc } from '../services/soundcloud'
+import { findGeniusLink, geniusSearchUrl, type GeniusLink } from '../services/genius'
 import { useT } from '../i18n'
 
 function fmt(n?: number) {
@@ -17,6 +18,20 @@ export function ContextMenu() {
   const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x: 0, y: 0 })
+  const [genius, setGenius] = useState<GeniusLink | null>(null)
+
+  // Resolve while the menu is open, so clicking is a direct window.open. Until it
+  // lands (or if it fails) the item falls back to a Genius search for the title.
+  useEffect(() => {
+    const tr = contextMenu?.track
+    if (!tr) { setGenius(null); return }
+    let cancelled = false
+    setGenius(null)
+    findGeniusLink(tr.id, tr.title, tr.user?.username ?? '')
+      .then(link => { if (!cancelled) setGenius(link) })
+      .catch(() => { /* fall back to search */ })
+    return () => { cancelled = true }
+  }, [contextMenu?.track.id])
 
   // Keep the menu on-screen
   useEffect(() => {
@@ -80,6 +95,11 @@ export function ContextMenu() {
       label: t('ctxGoArtist'),
       icon: <IcoStroke><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></IcoStroke>,
       onClick: () => { if (track.user) { setShowTrackPage(false); setShowQueue(false); setSelectedAlbum(null); setArtistPage(track.user) } },
+    },
+    {
+      label: genius?.exact === false ? t('searchGenius') : t('openGenius'),
+      icon: <span className="w-3.5 h-3.5 inline-flex items-center justify-center text-[10px] font-extrabold leading-none">G</span>,
+      onClick: () => window.open(genius?.url ?? geniusSearchUrl(track.title)),
     },
     {
       label: t('ctxCopyLink'),
