@@ -1,26 +1,33 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
-import { useProfile, useUI, useSettings, usePlayer, ACCENT_COLORS } from '../store'
+import { useProfile, useUI, useSettings, usePlayer, useUpdate, ACCENT_COLORS } from '../store'
+import { pendingUpdate } from '../services/updates'
 import { useT } from '../i18n'
 import logo from '../assets/logo_sidebar.png'
 
-const NAV = [
+export const NAV = [
   { id: 'main'      as const, key: 'home'      as const, icon: HomeIcon },
   { id: 'stream'    as const, key: 'stream'    as const, icon: StreamIcon },
   { id: 'releases'  as const, key: 'releases'  as const, icon: ReleasesIcon },
   { id: 'likes'     as const, key: 'likes'     as const, icon: HeartIcon  },
   { id: 'playlists' as const, key: 'playlists' as const, icon: ListIcon   },
+  { id: 'friends'   as const, key: 'friends'   as const, icon: FriendsIcon },
   { id: 'search'    as const, key: 'search'    as const, icon: SearchIcon },
 ]
 
 export function Sidebar() {
   const { user, likes, playlists, setLikes, setPlaylists, setStream, clientId, oauthToken } = useProfile()
-  const { page, setPage, goToPlaylists, setShowSettings } = useUI()
-  const { accent, playerStyle } = useSettings()
+  const { page, setPage, goToPlaylists, setShowSettings, setArtistPage } = useUI()
+  const { accent, playerStyle, hiddenNav } = useSettings()
+  const visibleNav = NAV.filter(item => !hiddenNav.includes(item.id))
   const compact = playerStyle === 'fullscreen'
   const showVolume = compact && page === 'main'
   const t = useT()
   const [syncing, setSyncing] = useState(false)
   const accentHex = ACCENT_COLORS[accent as keyof typeof ACCENT_COLORS] ?? 'var(--accent)'
+  const { current, releases } = useUpdate()
+  // Persistent dot on the gear whenever a newer release exists (ignores the
+  // banner's per-version dismissal, so the hint stays until you actually update).
+  const hasUpdate = !!pendingUpdate(current, releases, null)
 
   const handleRefresh = async () => {
     if (!user || syncing) return
@@ -28,12 +35,12 @@ export function Sidebar() {
     try {
       const { sc } = await import('../services/soundcloud')
       sc.setCredentials(clientId, oauthToken, user.id)
-      const [likesRes, playlistsRes, streamRes] = await Promise.all([
-        sc.getLikes(user.id, 200),
+      const [likesTracks, playlistsRes, streamRes] = await Promise.all([
+        sc.getAllLikes(user.id, 3000),
         sc.getPlaylists(user.id),
         sc.getStream(50),
       ])
-      setLikes(likesRes.collection.map((item: any) => item.track ?? item).filter(Boolean))
+      setLikes(likesTracks)
       setPlaylists(playlistsRes.collection)
       setStream(streamRes.collection.map((item: any) => item.track).filter(Boolean))
     } catch (e) {
@@ -45,7 +52,7 @@ export function Sidebar() {
   const navRef = useRef<HTMLElement>(null)
   const pillRef = useRef<HTMLSpanElement>(null)
 
-  const navActiveId = NAV.find(item =>
+  const navActiveId = visibleNav.find(item =>
     page === item.id || (item.id === 'playlists' && page === 'playlist-detail')
   )?.id ?? 'stream'
 
@@ -74,7 +81,8 @@ export function Sidebar() {
 
         {/* User card */}
         {user && (
-          <div className={`mb-3 rounded-xl slide-right ${compact ? 'mx-2 p-0 flex justify-center bg-transparent border-0' : 'mx-3 px-3 py-2.5'}`}
+          <div onClick={() => setArtistPage(user)} title={t('viewProfile')} role="button"
+            className={`mb-3 rounded-xl slide-right cursor-pointer transition-colors ${compact ? 'mx-2 p-0 flex justify-center bg-transparent border-0' : 'mx-3 px-3 py-2.5 hover:bg-white/[0.08]'}`}
             style={compact ? undefined : {
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid rgba(255,255,255,0.08)'
@@ -114,7 +122,7 @@ export function Sidebar() {
             }}
           />
 
-          {NAV.map((item, i) => {
+          {visibleNav.map((item, i) => {
             const active = page === item.id || (item.id === 'playlists' && page === 'playlist-detail')
             const Icon = item.icon
             return (
@@ -186,11 +194,16 @@ export function Sidebar() {
             title={compact ? t('settings') : undefined}
             className={`flex items-center text-sm text-white/40 hover:text-white/80 transition-all duration-200 hover:bg-white/5 rounded-xl ${compact ? 'justify-center w-9 h-9' : 'flex-1 gap-2.5 px-3 py-2'}`}
           >
-            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-            </svg>
+            <span className="relative shrink-0">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+              {hasUpdate && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: accentHex, boxShadow: '0 0 0 2px #080808' }} />
+              )}
+            </span>
             {!compact && t('settings')}
           </button>
 
@@ -340,5 +353,10 @@ function ListIcon() {
 function SearchIcon() {
   return <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+  </svg>
+}
+function FriendsIcon() {
+  return <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-1a4 4 0 00-4-4h-1m-4 5H2v-1a4 4 0 014-4h4a4 4 0 014 4v1zm-2-9a3 3 0 11-6 0 3 3 0 016 0zm7-1a3 3 0 11-6 0 3 3 0 016 0z"/>
   </svg>
 }

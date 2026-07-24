@@ -11,8 +11,10 @@ function hexToRgbArr(hex: string): [number, number, number] {
   return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]
 }
 import { useSync } from '../hooks/useSync'
+import { useBridge } from '../hooks/useBridge'
 import { Sidebar } from '../components/Sidebar'
 import { TrackList } from '../components/TrackList'
+import { FriendsPage } from '../components/FriendsPage'
 import { HomePlayer } from '../components/HomePlayer'
 import { FsLivingBg } from '../components/FsLivingBg'
 import { NowPlaying } from '../components/NowPlaying'
@@ -26,6 +28,9 @@ import { PlaylistContextMenu } from '../components/PlaylistContextMenu'
 import { ArtistContextMenu } from '../components/ArtistContextMenu'
 import { AlbumContextMenu } from '../components/AlbumContextMenu'
 import { SettingsPanel } from '../components/SettingsPanel'
+import { UpdateBanner } from '../components/UpdateBanner'
+import { checkForUpdates } from '../services/updates'
+import { watchWindowActivity } from '../services/perf'
 import { HeroAnim } from '../components/HeroAnim'
 import { QuickCustomize } from '../components/QuickCustomize'
 import { QueueFlyout } from '../components/QueueFlyout'
@@ -33,7 +38,7 @@ import { QueueFlyout } from '../components/QueueFlyout'
 export function Player() {
   const { clientId, oauthToken, user } = useProfile()
   const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, selectedAlbum, showQueue, showSettings, setShowSettings, page } = useUI()
-  const { accent, bgStyle, wallpaperPath, theme, playerStyle, fsLiveBg } = useSettings()
+  const { accent, bgStyle, wallpaperPath, theme, playerStyle, fsLiveBg, perfNoBlur, perfNoHeroAnim, perfMiniOpaque } = useSettings()
   const fsHome = playerStyle === 'fullscreen' && page === 'main'
   // A browsing overlay is open → the bottom island narrows and floats above it.
   const overlayOpen = !!(showTrackPage || artistPageUser || selectedAlbum)
@@ -53,6 +58,9 @@ export function Player() {
     window.electronAPI?.setDiscordRpc(useSettings.getState().discordRpc)
   }, [])
 
+  // Check GitHub for a newer release on startup (cached in main; safe if offline)
+  useEffect(() => { void checkForUpdates() }, [])
+
   // Apply the configured start page + sync system prefs to the main process once
   useEffect(() => {
     const s = useSettings.getState()
@@ -65,6 +73,7 @@ export function Player() {
   }, [])
 
   useSync()
+  useBridge()
 
   // Broadcast player state to mini window whenever it changes
   useEffect(() => {
@@ -147,6 +156,20 @@ export function Player() {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
+  // Performance: same trick for the "no blur" option
+  useEffect(() => {
+    if (perfNoBlur) document.documentElement.dataset.noblur = '1'
+    else delete document.documentElement.dataset.noblur
+  }, [perfNoBlur])
+
+  // Track window focus/visibility so animation loops can idle when unwatched
+  useEffect(() => watchWindowActivity(), [])
+
+  // Mini-player transparency is a window option — main applies it on next open
+  useEffect(() => {
+    window.electronAPI?.setMiniOpaque?.(perfMiniOpaque)
+  }, [perfMiniOpaque])
+
   // The living artwork background fills the whole window; when it's on, keep a
   // neutral solid base under it so it doesn't blend with the page gradient.
   const livingBgActive = fsHome && fsLiveBg && bgStyle !== 'wallpaper'
@@ -191,7 +214,7 @@ export function Player() {
 
       {/* Home hero animation — sits BEHIND the sidebar/content (z-index -1) and
           pokes slightly onto the sidebar, showing through its glass */}
-      {page === 'main' && playerStyle !== 'fullscreen' && (
+      {page === 'main' && playerStyle !== 'fullscreen' && !perfNoHeroAnim && (
         <div className="absolute pointer-events-none" style={{ top: 36, left: 170, right: 0, height: 240, zIndex: 0 }}>
           <HeroAnim />
         </div>
@@ -205,14 +228,21 @@ export function Player() {
         {/* Sidebar island — icons-only in the fullscreen player style */}
         <div
           className="shrink-0 glass-island rounded-2xl flex flex-col overflow-hidden relative"
-          style={{ width: playerStyle === 'fullscreen' ? 72 : 208, transition: 'width 0.34s cubic-bezier(0.16,1,0.3,1)' }}
+          style={{
+            width: playerStyle === 'fullscreen' ? 72 : 208,
+            // The row grows by the bar's negative offset; only the content column
+            // should slide under the bar. 18 gives that height back, +12 keeps the
+            // usual gap between the sidebar and the bar.
+            marginBottom: islandOpen && !overlayOpen ? 30 : 0,
+            transition: 'width 0.34s cubic-bezier(0.16,1,0.3,1)',
+          }}
         >
           <Sidebar />
         </div>
 
         {/* Main content — fullscreen player on home, otherwise the track list */}
         <main className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ contain: 'layout paint' }}>
-          {fsHome ? <HomePlayer /> : <TrackList />}
+          {fsHome ? <HomePlayer /> : page === 'friends' ? <FriendsPage /> : <TrackList />}
         </main>
       </div>
 
@@ -228,6 +258,10 @@ export function Player() {
           transition: 'grid-template-rows 0.34s cubic-bezier(0.16,1,0.3,1)',
           position: 'relative',
           zIndex: overlayOpen ? 60 : 1,
+          // Pull the whole bar up over the list so the scroll container's clip edge
+          // ends up hidden behind it instead of cutting a visible line above it.
+          // Only while it's actually docked — not when collapsed or floating.
+          marginTop: islandOpen && !overlayOpen ? -18 : 0,
         }}
       >
         <div
@@ -240,9 +274,13 @@ export function Player() {
           }}
         >
           <div
-            className="mx-3 mt-3 mb-3 glass-island relative"
+            className="mx-3 mb-3 glass-island relative"
             style={{
               borderRadius: overlayOpen ? 26 : 16,
+              // Docked at the bottom the outline just reads as a divider under the
+              // track list — keep it only when the bar floats over an overlay.
+              border: overlayOpen ? undefined : 'none',
+              marginTop: overlayOpen ? 12 : 0,
               transform: (fsHome && !overlayOpen) ? 'translateY(16px)' : 'none',
               opacity: (fsHome && !overlayOpen) ? 0 : 1,
               boxShadow: overlayOpen ? '0 24px 70px rgba(0,0,0,0.6)' : 'none',
@@ -253,6 +291,9 @@ export function Player() {
           </div>
         </div>
       </div>
+
+      {/* Update banner (new GitHub release available) */}
+      <UpdateBanner />
 
       {/* Overlays */}
       {showTrackPage && <TrackPage />}

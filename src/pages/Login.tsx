@@ -10,6 +10,7 @@ declare global {
       auth: () => Promise<{ clientId: string; oauthToken: string }>
       getClientId: () => Promise<string>
       openMiniPlayer: () => Promise<void>
+      setMiniOpaque: (enabled: boolean) => Promise<void>
       closeMiniPlayer: () => Promise<void>
       toggleDevTools: () => Promise<void>
       showMainWindow: () => Promise<void>
@@ -18,6 +19,10 @@ declare global {
       onPlayerState: (cb: (state: unknown) => void) => (() => void)
       playerControl: (action: { type: string; payload?: unknown }) => void
       onPlayerCommand: (cb: (action: { type: string; payload?: unknown }) => void) => (() => void)
+      bridgeSendState: (state: unknown) => void
+      bridgeSendProgress: (position: number, playing: boolean) => void
+      bridgeSendAudio: (level: number, bass: number) => void
+      onBridgeCommand: (cb: (cmd: { action: string; value?: number | boolean | string }) => void) => (() => void)
       scWrite: (method: string, url: string, body: unknown, oauthToken: string) => Promise<unknown>
       windowMinimize: () => Promise<void>
       windowMaximize: () => Promise<void>
@@ -28,6 +33,8 @@ declare global {
       getLoginItem: () => Promise<boolean>
       secureSetToken: (token: string) => Promise<boolean>
       secureGetToken: () => Promise<string>
+      getAppVersion: () => Promise<string>
+      getReleases: (force?: boolean) => Promise<Array<{ tag: string; name: string; body: string; date: string; url: string; prerelease: boolean }>>
       wallpapersDir: () => Promise<string>
       openWallpapers: () => Promise<void>
       listWallpapers: () => Promise<{ name: string; path: string }[]>

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { usePlayer, useSettings, useUI, ACCENT_COLORS } from '../store'
+import { skipFrame } from '../services/perf'
 
 interface Props {
   analyserRef: React.MutableRefObject<AnalyserNode | null>
@@ -32,8 +33,10 @@ export function Visualizer({ analyserRef }: Props) {
     if (!canvas) return
     const ctx = canvas.getContext('2d')!
 
+    const perfLast = { t: 0 }
     const draw = () => {
       frameRef.current = requestAnimationFrame(draw)
+      if (skipFrame(performance.now(), perfLast)) return
       const analyser = analyserRef.current
       const W = canvas.width
       const H = canvas.height

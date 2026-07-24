@@ -1,15 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
-import { useSettings, useProfile, useUI, ACCENT_COLORS, EQ_BANDS, AccentColor, BgStyle, VisualizerStyle, HeroAnim, Theme, PlayerStyle, FsLayout, Lang, StartPage } from '../store'
+import { useSettings, useProfile, useUI, useUpdate, useToast, ACCENT_COLORS, EQ_BANDS, PerfKey, AccentColor, BgStyle, VisualizerStyle, HeroAnim, Theme, PlayerStyle, FsLayout, Lang, StartPage } from '../store'
+import { checkForUpdates, latestStable, cmpVersion } from '../services/updates'
+import { encodeEqPreset, decodeEqPreset } from '../services/eqPresets'
+import { NAV } from './Sidebar'
 import { useT } from '../i18n'
 
 interface Props { onClose: () => void }
 
 const EQ_LABELS = ['60', '250', '1k', '4k', '12k']
-type Category = 'profile' | 'appearance' | 'sound' | 'system' | 'language' | 'discord'
+type Category = 'profile' | 'appearance' | 'sound' | 'system' | 'perf' | 'language' | 'discord' | 'versions'
 
 export function SettingsPanel({ onClose }: Props) {
   const t = useT()
-  const [cat, setCat] = useState<Category>('profile')
+  const settingsTab = useUI(s => s.settingsTab)
+  const [cat, setCat] = useState<Category>((settingsTab as Category) || 'profile')
   const [closing, setClosing] = useState(false)
   const requestClose = () => { if (closing) return; setClosing(true); setTimeout(onClose, 210) }
 
@@ -25,8 +29,10 @@ export function SettingsPanel({ onClose }: Props) {
     { id: 'appearance', label: t('catAppearance'), icon: <IconPalette /> },
     { id: 'sound',      label: t('catSound'),      icon: <IconSound /> },
     { id: 'system',     label: t('catSystem'),     icon: <IconSystem /> },
+    { id: 'perf',       label: t('catPerf'),       icon: <IconPerf /> },
     { id: 'language',   label: t('language'),      icon: <IconGlobe /> },
     { id: 'discord',    label: 'Discord',          icon: <IconDiscord /> },
+    { id: 'versions',   label: t('catVersions'),   icon: <IconVersions /> },
   ]
 
   return (
@@ -80,8 +86,10 @@ export function SettingsPanel({ onClose }: Props) {
             {cat === 'appearance' && <AppearanceTab />}
             {cat === 'sound' && <SoundTab />}
             {cat === 'system' && <SystemTab />}
+            {cat === 'perf' && <PerfTab />}
             {cat === 'language' && <LanguageTab />}
             {cat === 'discord' && <DiscordTab />}
+            {cat === 'versions' && <VersionsTab />}
           </div>
         </div>
       </div>
@@ -150,7 +158,7 @@ function ProfileTab({ onClose }: { onClose: () => void }) {
 }
 
 function AppearanceTab() {
-  const { accent, bgStyle, visualizerStyle, heroAnim, wallpaperPath, hoverPreview, theme, playerStyle, fsLayout, fsShowLyrics, fsLiveBg, fsBeatGlow, fsArtCrossfade, lyricsFontScale, setAccent, setBgStyle, setVisualizerStyle, setHeroAnim, setWallpaperPath, setHoverPreview, setTheme, setPlayerStyle, setFsLayout, setFsShowLyrics, setFsLiveBg, setFsBeatGlow, setFsArtCrossfade, setLyricsFontScale } = useSettings()
+  const { accent, bgStyle, visualizerStyle, heroAnim, wallpaperPath, theme, playerStyle, fsLayout, fsShowLyrics, fsLiveBg, fsBeatGlow, fsArtCrossfade, lyricsFontScale, hiddenNav, toggleNavHidden, setAccent, setBgStyle, setVisualizerStyle, setHeroAnim, setWallpaperPath, setTheme, setPlayerStyle, setFsLayout, setFsShowLyrics, setFsLiveBg, setFsBeatGlow, setFsArtCrossfade, setLyricsFontScale } = useSettings()
   const toggleLyrics = () => { const v = !fsShowLyrics; setFsShowLyrics(v); if (!v && fsLayout === 'stack') setFsLayout('side') }
   const { artRgb } = useUI()
   const t = useT()
@@ -279,7 +287,7 @@ function AppearanceTab() {
         </div>
       </Section>
 
-      {/* Home animation & hover preview only matter in the default player style */}
+      {/* Home animation only matters in the default player style */}
       {playerStyle !== 'fullscreen' && (
       <Section title={t('heroAnimation')}>
         <div className="space-y-1.5">
@@ -297,25 +305,56 @@ function AppearanceTab() {
       </Section>
       )}
 
-      {playerStyle !== 'fullscreen' && (
-      <Section title={t('hoverPreview')}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex flex-col">
-            <span className="text-sm text-white/80">{t('hoverPreview')}</span>
-            <span className="text-[10px] text-white/40">{t('hoverPreviewSub')}</span>
-          </div>
-          <Toggle active={hoverPreview} onClick={() => setHoverPreview(!hoverPreview)} />
+
+      <Section title={t('sidebarTabs')}>
+        <p className="text-[10px] text-white/30 mb-2.5 leading-tight">{t('sidebarTabsSub')}</p>
+        <div className="flex flex-col gap-1">
+          {NAV.map(item => {
+            const visible = !hiddenNav.includes(item.id)
+            // Never let the rail end up completely empty
+            const lastOne = visible && hiddenNav.length >= NAV.length - 1
+            return (
+              <div key={item.id} className="flex items-center justify-between py-1.5">
+                <span className="text-sm text-white/80">{t(item.key)}</span>
+                <Toggle active={visible} disabled={lastOne} onClick={() => toggleNavHidden(item.id)} />
+              </div>
+            )
+          })}
         </div>
       </Section>
-      )}
     </>
   )
 }
 
 function SoundTab() {
-  const { eq, eqEnabled, setEqBand, setEqEnabled, resetEq, outputDeviceId, setOutputDeviceId, crossfade, setCrossfade } = useSettings()
+  const { eq, eqEnabled, setEqBand, setEqEnabled, resetEq, outputDeviceId, setOutputDeviceId, crossfade, setCrossfade,
+    eqPresets, activePresetId, applyEqPreset, saveEqPreset, renameEqPreset, deleteEqPreset, addEqPreset } = useSettings()
+  const showToast = useToast(s => s.show)
   const t = useT()
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+  const [nameModal, setNameModal] = useState<{ mode: 'save' | 'rename'; id?: string; value: string } | null>(null)
+
+  const activeCustom = eqPresets.find(p => p.id === activePresetId) ?? null
+
+  const submitName = () => {
+    if (!nameModal) return
+    const v = nameModal.value.trim()
+    if (!v) return
+    if (nameModal.mode === 'save') { saveEqPreset(v); showToast(t('eqPresetSaved'), 'success') }
+    else if (nameModal.id) renameEqPreset(nameModal.id, v)
+    setNameModal(null)
+  }
+  const sharePreset = async (name: string, gains: number[]) => {
+    try { await navigator.clipboard.writeText(encodeEqPreset(name, gains)); showToast(t('eqCodeCopied'), 'success') } catch { /* ignore */ }
+  }
+  const importPreset = async () => {
+    try {
+      const decoded = decodeEqPreset(await navigator.clipboard.readText())
+      if (!decoded) { showToast(t('eqImportFail'), 'error'); return }
+      addEqPreset(decoded.name, decoded.gains)
+      showToast(t('eqPresetImported'), 'success')
+    } catch { showToast(t('eqImportFail'), 'error') }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -365,6 +404,34 @@ function SoundTab() {
         <Toggle active={eqEnabled} onClick={() => setEqEnabled(!eqEnabled)} />
         <button onClick={resetEq} className="text-[11px] text-white/40 hover:text-white/80 transition-colors">{t('eqReset')}</button>
       </div>
+
+      {/* Presets (custom only) */}
+      {eqPresets.length > 0 && (
+        <>
+          <p className="text-[11px] uppercase tracking-wider text-white/35 mb-2">{t('eqPresets')}</p>
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {eqPresets.map(p => {
+              const active = activePresetId === p.id
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => applyEqPreset(p.gains, p.id)}
+                  className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all"
+                  style={{
+                    background: active ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${active ? 'rgba(var(--accent-rgb),0.5)' : 'rgba(255,255,255,0.08)'}`,
+                    color: active ? '#fff' : 'rgba(255,255,255,0.6)',
+                  }}
+                >
+                  {p.name}
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Sliders */}
       <div className="flex items-end justify-between gap-2 max-w-sm" style={{ opacity: eqEnabled ? 1 : 0.4 }}>
         {EQ_BANDS.map((_, i) => (
           <div key={i} className="flex flex-col items-center gap-1.5 flex-1">
@@ -380,7 +447,54 @@ function SoundTab() {
           </div>
         ))}
       </div>
+
+      {/* Preset actions */}
+      <div className="flex flex-wrap items-center gap-2 mt-4">
+        <button onClick={() => setNameModal({ mode: 'save', value: '' })} className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          + {t('eqSavePreset')}
+        </button>
+        <button onClick={importPreset} className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          {t('eqImportPreset')}
+        </button>
+        {activeCustom && (
+          <>
+            <span className="w-px h-4 bg-white/10" />
+            <button onClick={() => setNameModal({ mode: 'rename', id: activeCustom.id, value: activeCustom.name })} className="text-[11px] text-white/50 hover:text-white/90 transition-colors">{t('rename')}</button>
+            <button onClick={() => sharePreset(activeCustom.name, activeCustom.gains)} className="text-[11px] text-white/50 hover:text-white/90 transition-colors">{t('eqShare')}</button>
+            <button onClick={() => deleteEqPreset(activeCustom.id)} className="text-[11px] text-red-400/70 hover:text-red-400 transition-colors">{t('delete')}</button>
+          </>
+        )}
+      </div>
     </Section>
+
+    {/* Name preset modal (save / rename) */}
+    {nameModal && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center playlist-picker-backdrop" onClick={e => { if (e.target === e.currentTarget) setNameModal(null) }}>
+        <div className="playlist-picker-panel glass-island rounded-2xl w-80 overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/8">
+            <p className="text-sm font-semibold text-white/90">{nameModal.mode === 'save' ? t('eqSavePreset') : t('rename')}</p>
+          </div>
+          <div className="p-4 flex flex-col gap-3">
+            <input
+              autoFocus type="text" value={nameModal.value}
+              placeholder={t('eqNamePlaceholder')}
+              onChange={e => setNameModal({ ...nameModal, value: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Enter') submitName(); if (e.key === 'Escape') setNameModal(null) }}
+              className="w-full rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none transition-all"
+              style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+              onFocus={e => { e.currentTarget.style.borderColor = 'rgba(var(--accent-rgb),0.5)' }}
+              onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
+            />
+            <div className="flex items-center gap-2">
+              <button onClick={() => setNameModal(null)} className="flex-1 py-2 rounded-xl text-sm font-medium text-white/60 hover:text-white/90 transition-all" style={{ background: 'rgba(255,255,255,0.06)' }}>{t('cancel')}</button>
+              <button onClick={submitName} disabled={!nameModal.value.trim()} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40" style={{ background: 'var(--accent)' }}>
+                {nameModal.mode === 'save' ? t('eqSave') : t('rename')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   )
 }
@@ -677,7 +791,7 @@ function FsToggleRow({ label, active, onClick, disabled }: { label: string; acti
 
 function Toggle({ active, onClick, disabled }: { active: boolean; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={disabled ? undefined : onClick} disabled={disabled} className="relative rounded-full transition-all duration-200"
+    <button onClick={disabled ? undefined : onClick} disabled={disabled} className="relative rounded-full transition-all duration-200 shrink-0"
       style={{ width: 38, height: 22, background: active ? 'var(--accent)' : 'rgba(255,255,255,0.15)', cursor: disabled ? 'not-allowed' : 'pointer' }}>
       <span className="absolute top-1/2 rounded-full bg-white transition-all duration-200"
         style={{ width: 16, height: 16, transform: 'translateY(-50%)', left: active ? 20 : 3 }} />
@@ -788,6 +902,127 @@ function FlagImg({ code, alt }: { code: string; alt: string }) {
 function FlagRU() { return <FlagImg code="1f1f7-1f1fa" alt="RU" /> }
 function FlagUS() { return <FlagImg code="1f1fa-1f1f8" alt="US" /> }
 
+// ── Performance ──────────────────────────────────────────────────────────────
+
+function PerfTab() {
+  const t = useT()
+  const s = useSettings()
+  const rows: [PerfKey, string, string][] = [
+    ['perfBigLists',       t('perfBig'),   t('perfBigSub')],
+    ['perfNoBlur',         t('perfBlur'),  t('perfBlurSub')],
+    ['perfNoHeroAnim',     t('perfHero'),  t('perfHeroSub')],
+    ['perfLowFps',         t('perfFps'),   t('perfFpsSub')],
+    ['perfPauseUnfocused', t('perfPause'), t('perfPauseSub')],
+    ['perfMiniOpaque',     t('perfMini'),  t('perfMiniSub')],
+  ]
+  return (
+    <>
+      <Section title={t('catPerf')}>
+        <div className="flex flex-col gap-1">
+          {rows.map(([key, label, sub]) => (
+            <SystemToggle key={key} label={label} sub={sub} active={s[key]} onClick={() => s.setPerf(key, !s[key])} />
+          ))}
+        </div>
+        <p className="text-[11px] text-white/35 leading-relaxed mt-3 p-3 rounded-lg"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          {t('perfMiniNote')}
+        </p>
+      </Section>
+    </>
+  )
+}
+
+// ── Versions / updates ───────────────────────────────────────────────────────
+
+function VersionsTab() {
+  const t = useT()
+  const { current, releases } = useUpdate()
+  const showToast = useToast(s => s.show)
+  const [checking, setChecking] = useState(false)
+
+  const doCheck = async (force: boolean) => {
+    setChecking(true)
+    await checkForUpdates(force)
+    setChecking(false)
+    if (force) {
+      const s = useUpdate.getState()
+      const l = latestStable(s.releases)
+      const up = !!l && !!s.current && cmpVersion(l.tag, s.current) > 0
+      showToast(up ? `${t('versionsAvailable')} · v${l!.tag.replace(/^v/i, '')}` : t('versionsUpToDate'), up ? 'info' : 'success')
+    }
+  }
+  useEffect(() => { void doCheck(false) }, [])
+
+  const latest = latestStable(releases)
+  const hasUpdate = !!latest && !!current && cmpVersion(latest.tag, current) > 0
+  const sorted = [...releases].sort((a, b) => cmpVersion(b.tag, a.tag))
+  const norm = (tag: string) => tag.replace(/^v/i, '')
+
+  return (
+    <div className="space-y-4">
+      {/* Status card */}
+      <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] uppercase tracking-wider text-white/40">{t('versionsCurrent')}</p>
+          <p className="text-lg font-semibold text-white tabular-nums">{current ? `v${norm(current)}` : '—'}</p>
+          <p className="text-xs mt-0.5" style={{ color: hasUpdate ? 'var(--accent)' : 'rgba(255,255,255,0.45)' }}>
+            {hasUpdate ? `${t('versionsAvailable')} · v${norm(latest!.tag)}` : t('versionsUpToDate')}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => doCheck(true)}
+            disabled={checking}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white transition-all disabled:opacity-50 flex items-center gap-1.5"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            {checking && <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+            {checking ? t('versionsChecking') : t('versionsCheck')}
+          </button>
+          {hasUpdate && (
+            <button
+              onClick={() => window.open(latest!.url)}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all"
+              style={{ background: 'var(--accent)' }}
+            >
+              {t('versionsUpdate')}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Changelog — separated from the current-version card */}
+      <div className="pt-3 border-t border-white/8">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35 mb-3">{t('versionsHistory')}</p>
+        {sorted.length === 0 ? (
+          <p className="text-sm text-white/40 py-6 text-center">{t('versionsEmpty')}</p>
+        ) : (
+          <div className="space-y-3">
+            {sorted.map(r => {
+            const isCurrent = !!current && cmpVersion(r.tag, current) === 0
+            const isLatest = latest?.tag === r.tag
+            return (
+              <div key={r.tag} className="rounded-xl p-3.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold text-white tabular-nums">v{norm(r.tag)}</span>
+                  {isLatest && !isCurrent && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(var(--accent-rgb),0.18)', color: 'var(--accent)' }}>{t('versionsLatestTag')}</span>}
+                  {isCurrent && <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/60">{t('versionsInstalled')}</span>}
+                  {r.prerelease && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300/80">pre</span>}
+                  {r.date && <span className="ml-auto text-[11px] text-white/35">{new Date(r.date).toLocaleDateString()}</span>}
+                </div>
+                {r.name && r.name !== r.tag && <p className="text-xs text-white/55 mt-1">{r.name}</p>}
+                {r.body && <p className="text-[13px] text-white/55 mt-2 whitespace-pre-wrap leading-relaxed">{r.body.trim()}</p>}
+                <button onClick={() => window.open(r.url)} className="text-[11px] text-white/40 hover:text-white/70 transition-colors mt-2">GitHub ↗</button>
+              </div>
+            )
+          })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Category icons ───────────────────────────────────────────────────────────
 
 function IconUser() {
@@ -804,6 +1039,12 @@ function IconGlobe() {
 }
 function IconSystem() {
   return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+}
+function IconPerf() {
+  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg>
+}
+function IconVersions() {
+  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 2v14M12 22v-2M5 7l7-5 7 5v6c0 3-3 5-7 7-4-2-7-4-7-7z"/></svg>
 }
 function IconDiscord() {
   return <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M20.3 4.4A19 19 0 0015.6 3l-.2.5a13 13 0 014.1 2 17 17 0 00-13 0 13 13 0 014.1-2L10.4 3a19 19 0 00-4.7 1.4C2.8 8.7 2 13 2.4 17.2A19 19 0 008 20l.6-1c-.9-.3-1.7-.7-2.4-1.2l.5-.4a13 13 0 0011 0l.5.4c-.7.5-1.5.9-2.4 1.2l.6 1a19 19 0 005.6-2.8c.5-4.9-.8-9.1-1.7-12.8zM9 15c-.9 0-1.6-.8-1.6-1.9S8.1 11.3 9 11.3s1.6.9 1.6 1.9S9.9 15 9 15zm6 0c-.9 0-1.6-.8-1.6-1.9s.7-1.8 1.6-1.8 1.6.9 1.6 1.9S15.9 15 15 15z"/></svg>

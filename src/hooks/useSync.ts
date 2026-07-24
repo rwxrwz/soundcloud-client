@@ -11,13 +11,11 @@ export function useSync() {
 
     const sync = async () => {
       try {
-        const [likes, playlists, stream] = await Promise.all([
-          sc.getLikes(user.id, 200),
+        const [likesTracks, playlists, stream] = await Promise.all([
+          sc.getAllLikes(user.id, 3000),
           sc.getPlaylists(user.id),
           sc.getStream(50)
         ])
-        // /track_likes returns { collection: [{ track: SCTrack, created_at: string }] }
-        const likesTracks = likes.collection.map((item: any) => item.track ?? item).filter(Boolean)
         setLikes(likesTracks)
         setPlaylists(playlists.collection)
         setStream(stream.collection.map((item: any) => item.track).filter(Boolean))

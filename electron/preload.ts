@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   auth: () => ipcRenderer.invoke('sc-auth'),
   getClientId: () => ipcRenderer.invoke('sc-get-client-id'),
   openMiniPlayer: () => ipcRenderer.invoke('open-mini-player'),
+  setMiniOpaque: (enabled: boolean) => ipcRenderer.invoke('set-mini-opaque', enabled),
   closeMiniPlayer: () => ipcRenderer.invoke('close-mini-player'),
   toggleDevTools: () => ipcRenderer.invoke('toggle-devtools'),
   showMainWindow: () => ipcRenderer.invoke('show-main-window'),
@@ -30,6 +31,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('player-command', handler)
   },
 
+  // Companion WebSocket bridge (Dynamic Island overlay)
+  bridgeSendState: (state: unknown) => ipcRenderer.send('bridge:state', state),
+  bridgeSendProgress: (position: number, playing: boolean) => ipcRenderer.send('bridge:progress', { position, playing }),
+  bridgeSendAudio: (level: number, bass: number) => ipcRenderer.send('bridge:audio', { level, bass }),
+  onBridgeCommand: (cb: (cmd: { action: string; value?: number | boolean | string }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, cmd: { action: string; value?: number | boolean | string }) => cb(cmd)
+    ipcRenderer.on('bridge:command', handler)
+    return () => ipcRenderer.removeListener('bridge:command', handler)
+  },
+
   // Write API: proxies through main process so session cookies are included
   scWrite: (method: string, url: string, body: unknown, oauthToken: string) =>
     ipcRenderer.invoke('sc-write', method, url, body, oauthToken),
@@ -50,6 +61,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Secure OAuth token storage (OS keychain via safeStorage)
   secureSetToken: (token: string) => ipcRenderer.invoke('secure-set-token', token),
   secureGetToken: () => ipcRenderer.invoke('secure-get-token') as Promise<string>,
+
+  // App version + GitHub releases (update check)
+  getAppVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,
+  getReleases: (force?: boolean) => ipcRenderer.invoke('get-releases', force) as Promise<Array<{ tag: string; name: string; body: string; date: string; url: string; prerelease: boolean }>>,
 
   // Video wallpapers (userData/wallpapers)
   wallpapersDir: () => ipcRenderer.invoke('wallpapers-dir') as Promise<string>,

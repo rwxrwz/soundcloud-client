@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, sa
 import { join, relative, isAbsolute } from 'path'
 import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync, readdirSync } from 'fs'
 import { Client } from '@xhayper/discord-rpc'
+import { startBridge, stopBridge, bridgeSetState, bridgeProgress, bridgeAudio, type BridgeState } from './bridge'
 
 const ICON_PATH = join(__dirname, '../../buildResources/icon_rounded.ico')
 
@@ -163,6 +164,10 @@ function createMainWindow(): void {
   })
 }
 
+// Performance option: a non-transparent mini-player is much cheaper to composite.
+// Applies the next time the window is opened.
+let miniOpaque = false
+
 function createMiniWindow(): void {
   if (miniWindow && !miniWindow.isDestroyed()) { miniWindow.show(); miniWindow.focus(); return }
 
@@ -179,7 +184,7 @@ function createMiniWindow(): void {
     resizable: false,
     alwaysOnTop: true,
     frame: false,
-    transparent: true,
+    transparent: !miniOpaque,
     skipTaskbar: true,
     show: false,
     webPreferences: {
@@ -362,6 +367,40 @@ ipcMain.handle('wallpapers-list', () => {
   } catch { return [] }
 })
 
+// ── App version / GitHub releases (update check) ────────────────────────────
+const GH_REPO = 'rwxrwz/soundcloud-client'
+const RELEASES_TTL = 30 * 60 * 1000 // 30 min — GitHub allows 60 unauthenticated req/h
+interface GithubRelease { tag: string; name: string; body: string; date: string; url: string; prerelease: boolean }
+let releasesCache: { at: number; data: GithubRelease[] } | null = null
+
+ipcMain.handle('get-app-version', () => app.getVersion())
+
+ipcMain.handle('get-releases', async (_event, force?: boolean) => {
+  if (!force && releasesCache && Date.now() - releasesCache.at < RELEASES_TTL) return releasesCache.data
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GH_REPO}/releases?per_page=30`, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'SoundCloud-Desktop-Player' },
+    })
+    if (!res.ok) return releasesCache?.data ?? []
+    const raw = await res.json() as Array<{ tag_name?: string; name?: string; body?: string; published_at?: string; html_url?: string; prerelease?: boolean; draft?: boolean }>
+    const data: GithubRelease[] = (Array.isArray(raw) ? raw : [])
+      .filter(r => !r.draft)
+      .map(r => ({
+        tag: r.tag_name ?? '',
+        name: r.name || r.tag_name || '',
+        body: r.body ?? '',
+        date: r.published_at ?? '',
+        url: r.html_url ?? '',
+        prerelease: !!r.prerelease,
+      }))
+    releasesCache = { at: Date.now(), data }
+    return data
+  } catch {
+    return releasesCache?.data ?? []
+  }
+})
+
+ipcMain.handle('set-mini-opaque', (_, enabled: boolean) => { miniOpaque = !!enabled })
 ipcMain.handle('open-mini-player', () => createMiniWindow())
 ipcMain.handle('close-mini-player', () => { miniWindow?.close(); miniWindow = null })
 ipcMain.handle('toggle-devtools', () => { if (process.env.ELECTRON_RENDERER_URL) mainWindow?.webContents.toggleDevTools() })
@@ -408,6 +447,11 @@ ipcMain.on('player-control', (_, action) => {
     mainWindow.webContents.send('player-command', action)
   }
 })
+
+// Companion WebSocket bridge: main renderer → main process → WS clients
+ipcMain.on('bridge:state', (_, state: BridgeState) => bridgeSetState(state))
+ipcMain.on('bridge:progress', (_, p: { position: number; playing: boolean }) => bridgeProgress(p.position, p.playing))
+ipcMain.on('bridge:audio', (_, a: { level: number; bass: number }) => bridgeAudio(a.level, a.bass))
 
 // Auth handler: opens SoundCloud signin, waits for login, then grabs credentials automatically
 ipcMain.handle('sc-auth', async () => {
@@ -502,6 +546,12 @@ app.whenReady().then(() => {
 
   createMainWindow()
   createTray()
+
+  // Companion overlay bridge: relay WS commands to the main renderer's player.
+  startBridge((cmd) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bridge:command', cmd)
+  })
+
   app.on('activate', () => {
     // macOS: clicking dock icon shows main window
     mainWindow?.show()
@@ -515,4 +565,4 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin' && (isQuitting || !closeToTray)) app.quit()
 })
 
-app.on('before-quit', () => { isQuitting = true; disconnectRpc() })
+app.on('before-quit', () => { isQuitting = true; disconnectRpc(); stopBridge() })

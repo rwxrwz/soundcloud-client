@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { SCTrack } from '../services/soundcloud'
 import { sc } from '../services/soundcloud'
 import { usePlayer, useUI, useLyrics, useAccentHex } from '../store'
@@ -10,7 +11,7 @@ interface Props {
   showDate?: boolean
 }
 
-export function TrackCard({ track, queue, showDate }: Props) {
+function TrackCardBase({ track, queue, showDate }: Props) {
   const { setTrack, currentTrack, isPlaying, setPlaying } = usePlayer()
   const { setArtistPage, setContextMenu } = useUI()
   const hasLyrics = useLyrics(s => s.available[track.id])
@@ -46,7 +47,7 @@ export function TrackCard({ track, queue, showDate }: Props) {
       {/* Artwork */}
       <div className="relative shrink-0 w-11 h-11 rounded-lg overflow-hidden bg-white/5">
         {artwork ? (
-          <img src={artwork} alt="" className="w-full h-full object-cover" />
+          <img src={artwork} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <svg className="w-5 h-5 text-white/20" fill="currentColor" viewBox="0 0 20 20">
@@ -123,3 +124,7 @@ export function TrackCard({ track, queue, showDate }: Props) {
     </div>
   )
 }
+
+// Long lists (likes can be thousands) re-render on every keystroke in the
+// filter box otherwise. Track objects are stable references from the store.
+export const TrackCard = memo(TrackCardBase)

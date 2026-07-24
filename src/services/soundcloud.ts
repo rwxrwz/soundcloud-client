@@ -116,6 +116,25 @@ class SoundCloudService {
     return this.get<SCCollection<SCTrack>>(`/users/${userId}/track_likes`, { limit })
   }
 
+  // Paginate through /track_likes (max ~200 per request) up to `max` tracks.
+  // Returns unwrapped tracks (the endpoint wraps each as { track, created_at }).
+  async getAllLikes(userId: number, max = 3000): Promise<SCTrack[]> {
+    const out: SCTrack[] = []
+    const push = (col: SCCollection<SCTrack>) => {
+      for (const item of (col.collection ?? [])) {
+        const tr = (item as unknown as { track?: SCTrack }).track ?? (item as SCTrack)
+        if (tr) out.push(tr)
+      }
+    }
+    let res = await this.getLikes(userId, 200)
+    push(res)
+    while (res.next_href && out.length < max) {
+      res = await this.getNextPage<SCTrack>(res.next_href)
+      push(res)
+    }
+    return out.slice(0, max)
+  }
+
   async getPlaylists(userId: number): Promise<SCCollection<SCPlaylist>> {
     return this.get<SCCollection<SCPlaylist>>(`/users/${userId}/playlists`, { limit: 50 })
   }
@@ -135,6 +154,10 @@ class SoundCloudService {
 
   async getFollowings(userId: number, limit = 200): Promise<SCCollection<SCUser>> {
     return this.get<SCCollection<SCUser>>(`/users/${userId}/followings`, { limit })
+  }
+
+  async getFollowers(userId: number, limit = 200): Promise<SCCollection<SCUser>> {
+    return this.get<SCCollection<SCUser>>(`/users/${userId}/followers`, { limit })
   }
 
   // Recent releases feed: latest tracks from followed artists, merged & sorted.

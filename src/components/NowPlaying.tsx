@@ -1,6 +1,7 @@
 ﻿import { useRef, useEffect, useState, useCallback } from 'react'
 import { usePlayer, useUI, useSettings, useAccentHex, useProfile, useToast } from '../store'
 import { sc } from '../services/soundcloud'
+import { skipFrame } from '../services/perf'
 import { useAudio } from '../hooks/useAudio'
 import { Visualizer } from './Visualizer'
 import { Slider } from './Slider'
@@ -91,8 +92,10 @@ export function NowPlaying() {
   // Beat-reactive glow behind artwork
   useEffect(() => {
     let rafId: number
+    const perfLast = { t: 0 }
     const draw = () => {
       rafId = requestAnimationFrame(draw)
+      if (skipFrame(performance.now(), perfLast)) return
       const el = artworkDivRef.current
       if (!el) return
       const [r, g, b] = artColorRef.current

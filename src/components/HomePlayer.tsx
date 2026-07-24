@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePlayer, useUI, useSettings, useAccentHex } from '../store'
 import { sc } from '../services/soundcloud'
+import { skipFrame } from '../services/perf'
 import { fetchLyrics, LyricsResult } from '../services/lyrics'
 import { audioBus } from '../hooks/audioBus'
 import { Slider } from './Slider'
@@ -232,8 +233,10 @@ function ArtworkBox({ artwork, className, style, baseGlow, beatGlow, crossfade, 
     if (!el) return
     if (!beatGlow) { el.style.boxShadow = baseGlow; return }
     let raf = 0
+    const perfLast = { t: 0 }
     const draw = () => {
       raf = requestAnimationFrame(draw)
+      if (skipFrame(performance.now(), perfLast)) return
       const an = audioBus.analyser
       let target = 0
       if (an && usePlayer.getState().isPlaying) {

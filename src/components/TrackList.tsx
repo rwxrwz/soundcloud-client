@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { useProfile, useUI, useLyrics, useToast } from '../store'
+import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
+import { useProfile, useUI, useLyrics, useToast, useSettings } from '../store'
 import { sc, SCTrack, SCPlaylist } from '../services/soundcloud'
 import { playlistCache, hydratingSet } from '../services/playlistCache'
 import { checkTracksLyrics } from '../services/lyrics'
@@ -28,7 +28,9 @@ export function TrackList() {
   const [drmOnly, setDrmOnly] = useState(false)
   const [artistFilter, setArtistFilter] = useState('')
   const lyricsMap = useLyrics(s => s.available)
+  const perfBigLists = useSettings(s => s.perfBigLists)
   const filterInputRef = useRef<HTMLInputElement>(null)
+  const listScrollRef = useRef<HTMLDivElement>(null)
   const t = useT()
   const markLyrics = useLyrics(s => s.mark)
 
@@ -121,7 +123,7 @@ export function TrackList() {
   // Search results (tabs: all/tracks/artists/albums/playlists) live in <SearchResults/>.
 
   // Reset filters when playlist changes
-  useEffect(() => { setPlaylistFilter(''); setFilterOpen(false); setLyricsOnly(false); setDrmOnly(false); setArtistFilter('') }, [selectedPlaylist?.id])
+  useEffect(() => { setPlaylistFilter(''); setFilterOpen(false); setLyricsOnly(false); setDrmOnly(false); setArtistFilter('') }, [selectedPlaylist?.id, page])
 
 
   // Show playlist tracks
@@ -161,6 +163,7 @@ export function TrackList() {
   let rawTracks: SCTrack[] = []
   let title = ''
   const canSort = page === 'likes' || page === 'playlist-detail'
+  const canFilter = page === 'likes' || page === 'playlist-detail'
 
   switch (page) {
     case 'stream':          rawTracks = stream;                                                   title = t('streamTitle'); break
@@ -172,14 +175,14 @@ export function TrackList() {
 
   const tracks = useMemo(() => {
     let list = canSort && trackOrder === 'oldest' ? [...rawTracks].reverse() : rawTracks
-    if (page === 'playlist-detail') {
-      if (playlistFilter.trim()) {
-        const q = playlistFilter.toLowerCase()
-        list = list.filter(tr =>
-          tr.title?.toLowerCase().includes(q) ||
-          tr.user?.username?.toLowerCase().includes(q)
-        )
-      }
+    if (canFilter && playlistFilter.trim()) {
+      const q = playlistFilter.toLowerCase()
+      list = list.filter(tr =>
+        tr.title?.toLowerCase().includes(q) ||
+        tr.user?.username?.toLowerCase().includes(q)
+      )
+    }
+    if (canFilter) {
       if (artistFilter.trim()) {
         const aq = artistFilter.toLowerCase()
         list = list.filter(tr => tr.user?.username?.toLowerCase().includes(aq))
@@ -214,7 +217,12 @@ export function TrackList() {
     if (scanning) { scanCancelRef.current = true; setScanning(false); return }
     setScanning(true)
     scanCancelRef.current = false
-    await checkTracksLyrics(tracks, markLyrics, () => scanCancelRef.current)
+    // Each track costs several lrclib requests, so a few thousand tracks would
+    // mean tens of thousands of calls. With "big lists" on, scan a slice.
+    const SCAN_CAP = 300
+    const list = perfBigLists && tracks.length > SCAN_CAP ? tracks.slice(0, SCAN_CAP) : tracks
+    if (list.length < tracks.length) showToast(`${t('scanLyrics')}: ${list.length} / ${tracks.length}`, 'info')
+    await checkTracksLyrics(list, markLyrics, () => scanCancelRef.current)
     setScanning(false)
   }
   useEffect(() => () => { scanCancelRef.current = true }, [])
@@ -310,12 +318,12 @@ export function TrackList() {
               onFocus={e => { e.currentTarget.style.borderColor = 'rgba(var(--accent-rgb),0.5)'; e.currentTarget.style.background = 'rgba(255,255,255,0.09)' }}
               onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.07)' }}
             />
-          ) : filterOpen && page === 'playlist-detail' ? (
+          ) : filterOpen && canFilter ? (
             <input
               ref={filterInputRef}
               autoFocus
               type="text"
-              placeholder={`${t('searchInPlaylist')}...`}
+              placeholder={`${page === 'likes' ? t('searchInLikes') : t('searchInPlaylist')}...`}
               value={playlistFilter}
               onChange={e => setPlaylistFilter(e.target.value)}
               onKeyDown={e => { if (e.key === 'Escape') closeSearch() }}
@@ -326,8 +334,8 @@ export function TrackList() {
             <>
               <h1 className="text-xl font-bold text-white truncate">{title}</h1>
               <div className="flex items-center gap-2 mt-0.5">
-                {(page === 'playlist-detail' && playlistFilter)
-                  ? <p className="text-xs" style={{ color: 'var(--accent)' }}>{tracks.length} {t('ofCount')} {hydratedTracks.length}</p>
+                {(canFilter && playlistFilter)
+                  ? <p className="text-xs" style={{ color: 'var(--accent)' }}>{tracks.length} {t('ofCount')} {rawTracks.length}</p>
                   : tracks.length > 0 && <p className="text-xs text-white/35">{tracks.length} {t('tracksWord')}</p>
                 }
                 {hydrating && (
@@ -341,22 +349,22 @@ export function TrackList() {
           )}
         </div>
 
-        {/* Playlist filter button */}
-        {page === 'playlist-detail' && !filterOpen && (
+        {/* Search / filter button */}
+        {canFilter && !filterOpen && (
           <button
             onClick={() => { setFilterOpen(true); setTimeout(() => filterInputRef.current?.focus(), 0) }}
             className="p-1.5 rounded-lg transition-all shrink-0"
             style={{ color: hasActiveFilter ? 'var(--accent)' : 'rgba(255,255,255,0.35)' }}
             onMouseEnter={e => { if (!hasActiveFilter) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)' }}
             onMouseLeave={e => { if (!hasActiveFilter) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)' }}
-            title={t('searchInPlaylist')}
+            title={page === 'likes' ? t('searchInLikes') : t('searchInPlaylist')}
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
             </svg>
           </button>
         )}
-        {page === 'playlist-detail' && filterOpen && (
+        {canFilter && filterOpen && (
           <button
             onClick={closeSearch}
             className="p-1.5 rounded-lg transition-all shrink-0"
@@ -451,7 +459,7 @@ export function TrackList() {
       </div>
 
       {/* Filter bar */}
-      {page === 'playlist-detail' && filterOpen && (
+      {canFilter && filterOpen && (
         <div className={`px-5 pb-2 flex items-center gap-2 shrink-0 flex-wrap ${searchClosing ? 'search-out' : 'search-in'}`}>
           <button
             onClick={() => setLyricsOnly(v => !v)}
@@ -511,7 +519,7 @@ export function TrackList() {
       )}
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto px-3 pb-3">
+      <div ref={listScrollRef} className="flex-1 overflow-y-auto px-3 pb-3">
         {page === 'search' ? (
           <SearchResults />
         ) : (page === 'releases' && loadingReleases && releases.length === 0) ? (
@@ -522,11 +530,80 @@ export function TrackList() {
         ) : tracks.length === 0 ? (
           <Empty text={t('nothingHere')} />
         ) : (
-          <div key={listKey} className={`stagger ${page === 'releases' ? 'space-y-2' : 'space-y-0.5'}`}>
-            {tracks.map(track => <TrackCard key={track.id} track={track} queue={tracks} showDate={page === 'releases'} />)}
-          </div>
+          perfBigLists && tracks.length > 80 ? (
+            <VirtualTrackRows
+              key={listKey}
+              scrollRef={listScrollRef}
+              tracks={tracks}
+              showDate={page === 'releases'}
+              className={page === 'releases' ? 'space-y-2' : 'space-y-0.5'}
+            />
+          ) : (
+            <div key={listKey} className={`stagger ${page === 'releases' ? 'space-y-2' : 'space-y-0.5'}`}>
+              {tracks.map(track => <TrackCard key={track.id} track={track} queue={tracks} showDate={page === 'releases'} />)}
+            </div>
+          )
         )}
       </div>
+    </div>
+  )
+}
+
+// Windowed track list: only the rows near the viewport are mounted. Row height is
+// measured from a first "probe" render (so gaps and per-page layout differences
+// are accounted for) rather than hardcoded.
+function VirtualTrackRows({ scrollRef, tracks, showDate, className }: {
+  scrollRef: React.RefObject<HTMLDivElement>
+  tracks: SCTrack[]
+  showDate: boolean
+  className: string
+}) {
+  const OVERSCAN = 8
+  const PROBE = 20
+  const probeRef = useRef<HTMLDivElement>(null)
+  const [rowH, setRowH] = useState(0)
+  const [range, setRange] = useState({ start: 0, end: PROBE })
+
+  // Measure once: average height over the probe rows includes the flex gap
+  useLayoutEffect(() => {
+    if (rowH) return
+    const el = probeRef.current
+    if (!el) return
+    const n = Math.min(PROBE, tracks.length)
+    const h = el.getBoundingClientRect().height / Math.max(1, n)
+    if (h > 1) setRowH(h)
+  }, [rowH, tracks.length])
+
+  useEffect(() => {
+    const sc = scrollRef.current
+    if (!sc || !rowH) return
+    const update = () => {
+      const start = Math.max(0, Math.floor(sc.scrollTop / rowH) - OVERSCAN)
+      const end = Math.min(tracks.length, Math.ceil((sc.scrollTop + sc.clientHeight) / rowH) + OVERSCAN)
+      setRange(r => (r.start === start && r.end === end ? r : { start, end }))
+    }
+    update()
+    sc.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    return () => { sc.removeEventListener('scroll', update); window.removeEventListener('resize', update) }
+  }, [scrollRef, rowH, tracks.length])
+
+  if (!rowH) {
+    return (
+      <div ref={probeRef} className={className}>
+        {tracks.slice(0, PROBE).map(track => <TrackCard key={track.id} track={track} queue={tracks} showDate={showDate} />)}
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={className}
+      style={{ paddingTop: range.start * rowH, paddingBottom: Math.max(0, (tracks.length - range.end) * rowH) }}
+    >
+      {tracks.slice(range.start, range.end).map(track => (
+        <TrackCard key={track.id} track={track} queue={tracks} showDate={showDate} />
+      ))}
     </div>
   )
 }
@@ -545,7 +622,7 @@ function Empty({ text }: { text: string }) {
   )
 }
 
-function PlaylistCard({ playlist, onClick, liked }: { playlist: SCPlaylist; onClick: () => void; liked?: boolean }) {
+export function PlaylistCard({ playlist, onClick, liked }: { playlist: SCPlaylist; onClick: () => void; liked?: boolean }) {
   const tt = useT()
   const setPlaylistMenu = useUI(s => s.setPlaylistMenu)
   const art = (playlist.artwork_url ?? playlist.tracks?.[0]?.artwork_url)?.replace('-large', '-t200x200')

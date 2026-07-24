@@ -1,11 +1,15 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useUI, usePlayer, useProfile, useToast } from '../store'
 import { sc } from '../services/soundcloud'
 import { playlistCache } from '../services/playlistCache'
 import type { SCUser, SCTrack, SCPlaylist, SCWebProfile } from '../services/soundcloud'
 import { TrackActions } from './TrackActions'
+import { TrackCard } from './TrackCard'
+import { PlaylistCard } from './TrackList'
 import { SegmentedTabs } from './SegmentedTabs'
 import { useT, timeAgo } from '../i18n'
+
+type UserTab = 'releases' | 'albums' | 'playlists' | 'likes' | 'following' | 'followers'
 
 function fmt(n: number | undefined): string {
   if (n === undefined || n === null) return '—'
@@ -19,24 +23,34 @@ function hostname(url: string): string {
 }
 
 export function ArtistPage() {
-  const { artistPageUser, setArtistPage, setContextMenu } = useUI()
+  const { artistPageUser, setArtistPage, setContextMenu, drillArtist, backArtist, artistHistory, setSelectedPlaylist } = useUI()
   const { setTrack, currentTrack, isPlaying, setPlaying } = usePlayer()
-  const { followingIds, followOptimistic, unfollowOptimistic, likes, playlists, localPlaylists } = useProfile()
+  const { user: me, followingIds, followOptimistic, unfollowOptimistic, likes, playlists, localPlaylists, pinnedFriendIds, togglePinFriend } = useProfile()
   const [showLibrary, setShowLibrary] = useState(false)
   const { show: showToast } = useToast()
   const t = useT()
   const [user, setUser] = useState<SCUser | null>(artistPageUser)
   const [tracks, setTracks] = useState<SCTrack[]>([])
+  const [tracksNext, setTracksNext] = useState<string | null>(null)
+  const [tracksMoreLoading, setTracksMoreLoading] = useState(false)
   const [webProfiles, setWebProfiles] = useState<SCWebProfile[]>([])
   const [loading, setLoading] = useState(true)
 
-  const [tab, setTab] = useState<'releases' | 'albums'>('releases')
+  const [tab, setTab] = useState<UserTab>('releases')
   const [albums, setAlbums] = useState<SCPlaylist[]>([])
   const [albumsLoading, setAlbumsLoading] = useState(false)
   const [albumsLoaded, setAlbumsLoaded] = useState(false)
   const [expanded, setExpanded] = useState<number | null>(null)
   const [albumTracks, setAlbumTracks] = useState<Record<number, SCTrack[]>>({})
   const [albumTracksLoading, setAlbumTracksLoading] = useState<number | null>(null)
+
+  // Generic lazy loader for the playlists / likes / following / followers tabs
+  const [tabData, setTabData] = useState<any[]>([])
+  const [tabLoading, setTabLoading] = useState(false)
+  const [tabEmpty, setTabEmpty] = useState(false)
+  const [tabNext, setTabNext] = useState<string | null>(null)
+  const [tabMoreLoading, setTabMoreLoading] = useState(false)
+  const tabCache = useRef<Map<string, { list: any[]; next: string | null }>>(new Map())
 
   const [closing, setClosing] = useState(false)
   const close = () => { if (closing) return; setClosing(true); setTimeout(() => setArtistPage(null), 300) }
@@ -49,6 +63,8 @@ export function ArtistPage() {
 
   const artistId = (user ?? artistPageUser)?.id
   const isFollowing = artistId !== undefined && followingIds.includes(artistId)
+  const isSelf = artistId !== undefined && me?.id === artistId
+  const isPinned = artistId !== undefined && pinnedFriendIds.includes(artistId)
 
   // Which of this artist's tracks are in your library (likes + playlists), and
   // for each, which playlists it lives in — Spotify-style. Best-effort: playlist
@@ -91,6 +107,7 @@ export function ArtistPage() {
     if (!artistPageUser) return
     setUser(artistPageUser)
     setTracks([])
+    setTracksNext(null)
     setWebProfiles([])
     setLoading(true)
     // Reset the albums tab state for the new artist
@@ -103,6 +120,7 @@ export function ArtistPage() {
     ]).then(([u, t, wp]) => {
       setUser(u)
       setTracks(t.collection)
+      setTracksNext(t.next_href)
       setWebProfiles(wp)
       setLoading(false)
     }).catch(() => setLoading(false))
@@ -118,6 +136,27 @@ export function ArtistPage() {
       .finally(() => setAlbumsLoading(false))
   }, [tab, albumsLoaded, artistPageUser?.id])
 
+  // Lazy-load playlists / likes / following / followers, cached per (user, tab)
+  useEffect(() => {
+    if (artistId === undefined || tab === 'releases' || tab === 'albums') return
+    const key = `${artistId}:${tab}`
+    const cached = tabCache.current.get(key)
+    if (cached) { setTabData(cached.list); setTabNext(cached.next); setTabEmpty(cached.list.length === 0); setTabLoading(false); return }
+    let cancelled = false
+    setTabLoading(true); setTabEmpty(false); setTabData([]); setTabNext(null)
+    const load = async (): Promise<{ list: any[]; next: string | null }> => {
+      if (tab === 'playlists') { const r = await sc.getPlaylists(artistId); return { list: r.collection ?? [], next: r.next_href } }
+      if (tab === 'likes') { const r = await sc.getLikes(artistId, 100); return { list: (r.collection ?? []).map((it: any) => it.track ?? it).filter(Boolean), next: r.next_href } }
+      if (tab === 'following') { const r = await sc.getFollowings(artistId); return { list: r.collection ?? [], next: r.next_href } }
+      const r = await sc.getFollowers(artistId); return { list: r.collection ?? [], next: r.next_href }
+    }
+    load()
+      .then(({ list, next }) => { if (cancelled) return; tabCache.current.set(key, { list, next }); setTabData(list); setTabNext(next); setTabEmpty(list.length === 0) })
+      .catch(() => { if (!cancelled) { setTabData([]); setTabNext(null); setTabEmpty(true) } })
+      .finally(() => { if (!cancelled) setTabLoading(false) })
+    return () => { cancelled = true }
+  }, [artistId, tab])
+
   const toggleAlbum = (al: SCPlaylist) => {
     if (expanded === al.id) { setExpanded(null); return }
     setExpanded(al.id)
@@ -129,6 +168,36 @@ export function ArtistPage() {
         .catch(() => {})
         .finally(() => setAlbumTracksLoading(null))
     }
+  }
+
+  // "Show more" for the likes / following / followers / playlists tabs
+  const loadMoreTab = () => {
+    if (!tabNext || tabMoreLoading || artistId === undefined) return
+    setTabMoreLoading(true)
+    const from = tabNext
+    sc.getNextPage<any>(from)
+      .then(r => {
+        const add = tab === 'likes'
+          ? (r.collection ?? []).map((it: any) => it.track ?? it).filter(Boolean)
+          : (r.collection ?? [])
+        setTabData(prev => {
+          const list = [...prev, ...add]
+          tabCache.current.set(`${artistId}:${tab}`, { list, next: r.next_href })
+          return list
+        })
+        setTabNext(r.next_href)
+      })
+      .catch(() => {})
+      .finally(() => setTabMoreLoading(false))
+  }
+
+  const loadMoreTracks = () => {
+    if (!tracksNext || tracksMoreLoading) return
+    setTracksMoreLoading(true)
+    sc.getNextPage<SCTrack>(tracksNext)
+      .then(r => { setTracks(prev => [...prev, ...r.collection]); setTracksNext(r.next_href) })
+      .catch(() => {})
+      .finally(() => setTracksMoreLoading(false))
   }
 
 
@@ -161,6 +230,16 @@ export function ArtistPage() {
             <path d="M18 6L6 18M6 6l12 12"/>
           </svg>
         </button>
+
+        {/* Back — appears when you've drilled into someone via following/followers */}
+        {artistHistory.length > 0 && (
+          <button
+            onClick={backArtist}
+            className="absolute top-4 left-4 z-30 w-8 h-8 rounded-full flex items-center justify-center bg-black/35 hover:bg-black/55 transition-colors duration-150"
+          >
+            <svg className="w-4 h-4 text-white/85" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+          </button>
+        )}
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-6 pt-3 pb-28">
@@ -226,16 +305,34 @@ export function ArtistPage() {
             </div>
           </div>
 
-          {/* Follow button */}
-          <button
-            onClick={toggleFollow}
-            className="mb-5 px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 active:scale-95"
-            style={isFollowing
-              ? { background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.18)' }
-              : { background: 'var(--accent)', color: '#fff', boxShadow: '0 4px 18px rgba(var(--accent-rgb),0.4)' }}
-          >
-            {isFollowing ? `✓ ${t('unfollow')}` : t('follow')}
-          </button>
+          {/* Actions — follow / it's-you / pin */}
+          <div className="flex items-center gap-2 mb-5">
+            {isSelf ? (
+              <span className="px-4 py-2 rounded-full text-sm font-medium text-white/60" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>{t('itsYou')}</span>
+            ) : (
+              <button
+                onClick={toggleFollow}
+                className="px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 active:scale-95"
+                style={isFollowing
+                  ? { background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.18)' }
+                  : { background: 'var(--accent)', color: '#fff', boxShadow: '0 4px 18px rgba(var(--accent-rgb),0.4)' }}
+              >
+                {isFollowing ? `✓ ${t('unfollow')}` : t('follow')}
+              </button>
+            )}
+            {isFollowing && !isSelf && artistId !== undefined && (
+              <button
+                onClick={() => togglePinFriend(artistId)}
+                title={isPinned ? t('friendUnpin') : t('friendPin')}
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95"
+                style={isPinned
+                  ? { background: 'rgba(var(--accent-rgb),0.18)', color: 'var(--accent)', border: '1px solid rgba(var(--accent-rgb),0.4)' }
+                  : { background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M9 4v6l-2 3h10l-2-3V4M12 16v5M8 4h8" /></svg>
+              </button>
+            )}
+          </div>
 
           {/* External links */}
           {webProfiles.length > 0 && (
@@ -353,13 +450,64 @@ export function ArtistPage() {
 
           {/* Releases / Albums tabs */}
           <div>
-            <div className="mb-4">
-              <SegmentedTabs
+            <div className="mb-4 overflow-x-auto">
+              <SegmentedTabs<UserTab>
+                size="sm"
                 value={tab}
                 onChange={setTab}
-                options={[['releases', t('recentReleases')], ['albums', t('albumsEp')]]}
+                options={[
+                  ['releases', t('userTabTracks')],
+                  ['albums', t('userTabAlbums')],
+                  ['playlists', t('friendTabPlaylists')],
+                  ['likes', t('friendTabLikes')],
+                  ['following', t('friendTabFollowing')],
+                  ['followers', t('friendTabFollowers')],
+                ]}
               />
             </div>
+
+            {tab === 'playlists' && (
+              tabLoading ? <TabSpinner />
+              : tabEmpty ? <p className="text-sm text-white/25 text-center py-8">{t('friendNothing')}</p>
+              : <div className="grid gap-3 stagger" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 1fr))' }}>
+                  {(tabData as SCPlaylist[]).map(pl => <PlaylistCard key={pl.id} playlist={pl} onClick={() => { setSelectedPlaylist(pl); close() }} />)}
+                </div>
+            )}
+
+            {tab === 'likes' && (
+              tabLoading ? <TabSpinner />
+              : tabEmpty ? <p className="text-sm text-white/25 text-center py-8">{t('likesHidden')}</p>
+              : <div className="space-y-0.5">
+                  {(tabData as SCTrack[]).map(tr => <TrackCard key={tr.id} track={tr} queue={tabData as SCTrack[]} />)}
+                </div>
+            )}
+
+            {(tab === 'following' || tab === 'followers') && (
+              tabLoading ? <TabSpinner />
+              : tabEmpty ? <p className="text-sm text-white/25 text-center py-8">{t('friendNothing')}</p>
+              : <div className="space-y-1">
+                  {(tabData as SCUser[]).map(u => (
+                    <button key={u.id} onClick={() => drillArtist(u)} className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors text-left">
+                      <UserAvatar u={u} />
+                      <div className="min-w-0"><p className="text-sm text-white truncate">{u.full_name || u.username}</p><p className="text-[11px] text-white/40 truncate">@{u.username}</p></div>
+                    </button>
+                  ))}
+                </div>
+            )}
+
+            {tabNext && !tabLoading && tab !== 'releases' && tab !== 'albums' && (
+              <div className="flex justify-center pt-3">
+                <button
+                  onClick={loadMoreTab}
+                  disabled={tabMoreLoading}
+                  className="px-4 py-2 rounded-full text-xs font-medium text-white/70 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  {tabMoreLoading && <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  {t('showMore')}
+                </button>
+              </div>
+            )}
 
             {tab === 'albums' && (
               <AlbumsTab
@@ -481,6 +629,20 @@ export function ArtistPage() {
                     </div>
                   )
                 })}
+              </div>
+            )}
+
+            {tab === 'releases' && tracksNext && !loading && (
+              <div className="flex justify-center pt-3">
+                <button
+                  onClick={loadMoreTracks}
+                  disabled={tracksMoreLoading}
+                  className="px-4 py-2 rounded-full text-xs font-medium text-white/70 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  {tracksMoreLoading && <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  {t('showMore')}
+                </button>
               </div>
             )}
           </div>
@@ -621,6 +783,18 @@ function AlbumRow({ album, expanded, tracks, loading, onToggle }: {
   )
 }
 
+
+function TabSpinner() {
+  return <div className="flex items-center justify-center py-10"><span className="w-5 h-5 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" /></div>
+}
+
+function UserAvatar({ u }: { u: SCUser }) {
+  const url = sc.formatArtwork(u.avatar_url, 't200x200')
+  const initials = (u.full_name || u.username || '?').trim().slice(0, 2).toUpperCase()
+  return url
+    ? <img src={url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+    : <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/60 shrink-0">{initials}</div>
+}
 
 function StatCard({ value, label, loading }: { value: string; label: string; loading: boolean }) {
   return (

@@ -167,7 +167,7 @@ export function PlaylistContextMenu() {
       { label: t('ctxOpen'), icon: <IcoStroke><path d="M9 18l6-6-6-6" /></IcoStroke>, onClick: () => setSelectedPlaylist(pl) },
       { label: t('ctxPlay'), icon: <Ico><path d="M8 5v14l11-7z" /></Ico>, onClick: play },
       ...(isOwn ? [renameItem] : [likeItem]),
-      { label: t('sharePlaylist'), icon: <IcoStroke><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></IcoStroke>, onClick: share },
+      { label: t('sharePlaylist'), icon: <IcoStroke><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></IcoStroke>, onClick: share },
       { label: t('exportText'), icon: <IcoStroke><path d="M9 12h6M9 16h6M9 8h2M14 2v6h6M14 2l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" /></IcoStroke>, onClick: exportText },
       { label: t('ctxCopyLink'), icon: <IcoStroke><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></IcoStroke>, onClick: () => { if (pl.permalink_url) { navigator.clipboard.writeText(pl.permalink_url).catch(() => {}); showToast(t('linkCopied'), 'success') } } },
       { label: t('ctxOpenBrowser'), icon: <IcoStroke><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><path d="M15 3h6v6M10 14L21 3" /></IcoStroke>, onClick: () => { if (pl.permalink_url) window.open(pl.permalink_url) } },

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useSettings, useUI } from '../store'
 import { audioBus } from '../hooks/audioBus'
+import { skipFrame } from '../services/perf'
 
 function readAccent(): [number, number, number] {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb').trim()
@@ -99,8 +100,10 @@ export function HeroAnim() {
     const FRAME_MS = 1000 / 61
     let lastFrame = performance.now()
 
+    const perfLast = { t: 0 }
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw)
+      if (skipFrame(now, perfLast)) return
       const elapsed = now - lastFrame
       if (elapsed < FRAME_MS) return
       // frame-rate-independent step relative to a 60fps baseline (keeps speed)

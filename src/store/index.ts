@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { SCTrack, SCUser, SCPlaylist } from '../services/soundcloud'
+import type { Release } from '../services/updates'
+import type { EqPreset } from '../services/eqPresets'
 
 interface PlayerState {
   currentTrack: SCTrack | null
@@ -40,6 +42,8 @@ interface ProfileState {
   stream: SCTrack[]
   releases: SCTrack[]
   followingIds: number[]
+  followings: SCUser[]     // people you follow, with full profiles (Friends page)
+  pinnedFriendIds: number[]  // friends pinned to the front of the Friends strip
   localPlaylists: SCPlaylist[]
   addLocalPlaylist: (title: string, tracks: SCTrack[]) => SCPlaylist
   removeLocalPlaylist: (id: number) => void
@@ -51,6 +55,8 @@ interface ProfileState {
   setStream: (tracks: SCTrack[]) => void
   setReleases: (tracks: SCTrack[]) => void
   setFollowingIds: (ids: number[]) => void
+  setFollowings: (users: SCUser[]) => void
+  togglePinFriend: (id: number) => void
   followOptimistic: (id: number) => void
   unfollowOptimistic: (id: number) => void
   logout: () => void
@@ -60,7 +66,7 @@ interface ProfileState {
 }
 
 interface UIState {
-  page: 'main' | 'stream' | 'releases' | 'likes' | 'playlists' | 'search' | 'playlist-detail'
+  page: 'main' | 'stream' | 'releases' | 'likes' | 'playlists' | 'search' | 'playlist-detail' | 'friends'
   playlistsSubPage: 'playlists' | 'playlist-detail'
   selectedPlaylist: SCPlaylist | null
   selectedAlbum: SCPlaylist | null
@@ -73,10 +79,13 @@ interface UIState {
   showTrackPage: boolean
   showQueue: boolean
   artistPageUser: SCUser | null
+  artistHistory: SCUser[]   // back-stack for drilling user → following → user …
   playlistPickerTrack: SCTrack | null
   setPlaylistPickerTrack: (track: SCTrack | null) => void
   showSettings: boolean
   setShowSettings: (v: boolean) => void
+  settingsTab: string | null
+  openSettings: (tab?: string) => void
   contextMenu: { x: number; y: number; track: SCTrack } | null
   setContextMenu: (m: { x: number; y: number; track: SCTrack } | null) => void
   playlistMenu: { x: number; y: number; playlist: SCPlaylist } | null
@@ -101,6 +110,8 @@ interface UIState {
   setShowTrackPage: (v: boolean) => void
   setShowQueue: (v: boolean) => void
   setArtistPage: (user: SCUser | null) => void
+  drillArtist: (user: SCUser) => void
+  backArtist: () => void
 }
 
 export const usePlayer = create<PlayerState>()(
@@ -221,6 +232,8 @@ export const useProfile = create<ProfileState>()(
       stream: [],
       releases: [],
       followingIds: [],
+      followings: [],
+      pinnedFriendIds: [],
       localPlaylists: [],
       addLocalPlaylist: (title, tracks) => {
         const pl: SCPlaylist = {
@@ -240,11 +253,15 @@ export const useProfile = create<ProfileState>()(
       setStream: (stream) => set({ stream }),
       setReleases: (releases) => set({ releases }),
       setFollowingIds: (followingIds) => set({ followingIds }),
+      setFollowings: (followings) => set({ followings }),
+      togglePinFriend: (id) => set(s => ({
+        pinnedFriendIds: s.pinnedFriendIds.includes(id) ? s.pinnedFriendIds.filter(x => x !== id) : [...s.pinnedFriendIds, id],
+      })),
       followOptimistic: (id) => set(s => (s.followingIds.includes(id) ? s : { followingIds: [...s.followingIds, id] })),
       unfollowOptimistic: (id) => set(s => ({ followingIds: s.followingIds.filter(x => x !== id) })),
       logout: () => {
         try { window.electronAPI?.secureSetToken?.('') } catch { /* ignore */ }
-        set({ user: null, clientId: '', oauthToken: '', likes: [], playlists: [], likedPlaylists: [], stream: [], releases: [], followingIds: [], localPlaylists: [] })
+        set({ user: null, clientId: '', oauthToken: '', likes: [], playlists: [], likedPlaylists: [], stream: [], releases: [], followingIds: [], followings: [], pinnedFriendIds: [], localPlaylists: [] })
       },
       likeTrackOptimistic: (track) => set(s => ({ likes: [track, ...s.likes] })),
       unlikeTrackOptimistic: (trackId) => set(s => ({ likes: s.likes.filter(t => t.id !== trackId) })),
@@ -259,14 +276,21 @@ export const useProfile = create<ProfileState>()(
       // Don't persist `releases` — refetch a fresh feed each session.
       // `oauthToken` is intentionally excluded: it lives in the OS keychain
       // (secure-set-token) and is rehydrated into memory on startup.
+      // With "big lists" on we skip persisting likes/stream: re-serialising
+      // thousands of tracks on every store write is a real source of freezes,
+      // and useSync refetches both on launch anyway.
       partialize: (s) => ({
         user: s.user, clientId: s.clientId,
-        likes: s.likes, playlists: s.playlists, likedPlaylists: s.likedPlaylists, stream: s.stream,
-        followingIds: s.followingIds, localPlaylists: s.localPlaylists,
+        likes: useSettings.getState().perfBigLists ? [] : s.likes,
+        stream: useSettings.getState().perfBigLists ? [] : s.stream,
+        playlists: s.playlists, likedPlaylists: s.likedPlaylists,
+        followingIds: s.followingIds, followings: s.followings, pinnedFriendIds: s.pinnedFriendIds, localPlaylists: s.localPlaylists,
       }),
     }
   )
 )
+
+export type PerfKey = 'perfPauseUnfocused' | 'perfLowFps' | 'perfNoBlur' | 'perfNoHeroAnim' | 'perfMiniOpaque' | 'perfBigLists'
 
 export type AccentColor = 'orange' | 'blue' | 'green' | 'pink' | 'purple' | 'red' | 'cyan' | 'yellow' | 'white' | 'indigo' | 'slate' | 'mauve' | 'artwork'
 export type BgStyle = 'artwork' | 'accent' | 'dark' | 'midnight' | 'aurora' | 'wallpaper'
@@ -295,11 +319,20 @@ interface SettingsState {
   fsArtCrossfade: boolean  // crossfade artwork on track change
   lyricsFontScale: number  // lyrics font multiplier (1 = default)
   wallpaperPath: string
+  hiddenNav: string[]      // sidebar nav ids hidden from the rail
+  // ── Performance ──
+  perfPauseUnfocused: boolean  // freeze animation loops while the window is inactive
+  perfLowFps: boolean          // cap animation loops at ~30fps instead of 60
+  perfNoBlur: boolean          // kill backdrop-filter blur everywhere (GPU heavy)
+  perfNoHeroAnim: boolean      // don't mount the home-page canvas animation
+  perfMiniOpaque: boolean      // mini-player without window transparency
+  perfBigLists: boolean        // virtualise long lists, skip persisting them, cap the lyrics scan
   lang: Lang
   eq: number[]        // gain in dB per band, length 5
   eqEnabled: boolean
+  eqPresets: EqPreset[]          // user-created presets
+  activePresetId: string | null  // id of the applied preset (null = custom)
   outputDeviceId: string   // '' = system default
-  hoverPreview: boolean    // softly preview the track under the cursor on the home page
   discordRpc: boolean
   lyricsOpen: boolean
   crossfade: number        // crossfade between tracks, seconds (0 = off)
@@ -321,12 +354,18 @@ interface SettingsState {
   setFsArtCrossfade: (v: boolean) => void
   setLyricsFontScale: (v: number) => void
   setWallpaperPath: (p: string) => void
+  toggleNavHidden: (id: string) => void
+  setPerf: (key: PerfKey, v: boolean) => void
   setLang: (l: Lang) => void
   setEqBand: (index: number, gain: number) => void
   setEqEnabled: (v: boolean) => void
   resetEq: () => void
+  applyEqPreset: (gains: number[], id: string | null) => void
+  saveEqPreset: (name: string) => void
+  renameEqPreset: (id: string, name: string) => void
+  deleteEqPreset: (id: string) => void
+  addEqPreset: (name: string, gains: number[]) => void
   setOutputDeviceId: (id: string) => void
-  setHoverPreview: (v: boolean) => void
   setDiscordRpc: (v: boolean) => void
   setLyricsOpen: (v: boolean) => void
   setCrossfade: (v: number) => void
@@ -354,11 +393,19 @@ const SETTINGS_DEFAULTS = {
   fsArtCrossfade: true,
   lyricsFontScale: 1,
   wallpaperPath: '',
+  hiddenNav: [] as string[],
+  perfPauseUnfocused: false,
+  perfLowFps: false,
+  perfNoBlur: false,
+  perfNoHeroAnim: false,
+  perfMiniOpaque: false,
+  perfBigLists: false,
   lang: 'en' as Lang,
   eq: [0, 0, 0, 0, 0] as number[],
   eqEnabled: false,
+  eqPresets: [] as EqPreset[],
+  activePresetId: null as string | null,
   outputDeviceId: '',
-  hoverPreview: true,
   discordRpc: false,
   lyricsOpen: false,
   crossfade: 0,
@@ -386,14 +433,40 @@ export const useSettings = create<SettingsState>()(
       setFsArtCrossfade: (fsArtCrossfade) => set({ fsArtCrossfade }),
       setLyricsFontScale: (lyricsFontScale) => set({ lyricsFontScale }),
       setWallpaperPath: (wallpaperPath) => set({ wallpaperPath }),
+      toggleNavHidden: (id) => set(s => ({
+        hiddenNav: s.hiddenNav.includes(id) ? s.hiddenNav.filter(x => x !== id) : [...s.hiddenNav, id],
+      })),
+      setPerf: (key, v) => set({ [key]: v } as Partial<SettingsState>),
       setLang: (lang) => set({ lang }),
       setEqBand: (index, gain) => set(s => {
-        const eq = [...s.eq]; eq[index] = gain; return { eq }
+        const eq = [...s.eq]; eq[index] = gain; return { eq, activePresetId: null }
       }),
       setEqEnabled: (eqEnabled) => set({ eqEnabled }),
-      resetEq: () => set({ eq: [0, 0, 0, 0, 0] }),
+      resetEq: () => set({ eq: [0, 0, 0, 0, 0], activePresetId: null }),
+      applyEqPreset: (gains, id) => set({
+        eq: gains.slice(0, 5).map(n => Math.max(-12, Math.min(12, Math.round(n)))),
+        eqEnabled: true,
+        activePresetId: id,
+      }),
+      saveEqPreset: (name) => set(s => {
+        const preset: EqPreset = { id: `u:${Date.now().toString(36)}`, name: name.trim().slice(0, 40) || 'Preset', gains: [...s.eq] }
+        return { eqPresets: [...s.eqPresets, preset], activePresetId: preset.id }
+      }),
+      renameEqPreset: (id, name) => set(s => ({
+        eqPresets: s.eqPresets.map(p => (p.id === id ? { ...p, name: name.trim().slice(0, 40) || p.name } : p)),
+      })),
+      deleteEqPreset: (id) => set(s => ({
+        eqPresets: s.eqPresets.filter(p => p.id !== id),
+        activePresetId: s.activePresetId === id ? null : s.activePresetId,
+      })),
+      addEqPreset: (name, gains) => set(s => {
+        const g = gains.slice(0, 5).map(n => Math.max(-12, Math.min(12, Math.round(n))))
+        // Skip an exact duplicate (same name + curve) to avoid clutter on re-import
+        if (s.eqPresets.some(p => p.name === name && p.gains.join() === g.join())) return s
+        const preset: EqPreset = { id: `u:${Date.now().toString(36)}`, name: name.trim().slice(0, 40) || 'Preset', gains: g }
+        return { eqPresets: [...s.eqPresets, preset] }
+      }),
       setOutputDeviceId: (outputDeviceId) => set({ outputDeviceId }),
-      setHoverPreview: (hoverPreview) => set({ hoverPreview }),
       setDiscordRpc: (discordRpc) => set({ discordRpc }),
       setLyricsOpen: (lyricsOpen) => set({ lyricsOpen }),
       setCrossfade: (crossfade) => set({ crossfade }),
@@ -424,9 +497,15 @@ export const useSettings = create<SettingsState>()(
           if (!(key in d)) continue
           // Never import a machine-specific local wallpaper path from a foreign file
           if (key === 'wallpaperPath') continue
+          // EQ presets have their own share codes; don't pull them from a settings file
+          if (key === 'eqPresets' || key === 'activePresetId') continue
           const val = d[key]
           const def = SETTINGS_DEFAULTS[key]
           if (val === undefined || val === null) continue
+          if (key === 'hiddenNav') {
+            if (Array.isArray(val) && val.every(v => typeof v === 'string')) out.hiddenNav = val as string[]
+            continue
+          }
           if (key === 'eq') {
             if (Array.isArray(val) && val.length === 5 && val.every(n => typeof n === 'number' && isFinite(n))) {
               out.eq = (val as number[]).map(n => Math.max(-12, Math.min(12, n)))
@@ -516,10 +595,13 @@ export const useUI = create<UIState>()(
       showTrackPage: false,
       showQueue: false,
       artistPageUser: null,
+      artistHistory: [],
       playlistPickerTrack: null,
       setPlaylistPickerTrack: (playlistPickerTrack) => set({ playlistPickerTrack }),
       showSettings: false,
       setShowSettings: (showSettings) => set({ showSettings }),
+      settingsTab: null,
+      openSettings: (tab) => set({ showSettings: true, settingsTab: tab ?? null }),
       contextMenu: null,
       setContextMenu: (contextMenu) => set({ contextMenu }),
       playlistMenu: null,
@@ -543,7 +625,11 @@ export const useUI = create<UIState>()(
       setTrackOrder: (trackOrder) => set({ trackOrder }),
       setShowTrackPage: (showTrackPage) => set({ showTrackPage }),
       setShowQueue: (showQueue) => set({ showQueue }),
-      setArtistPage: (artistPageUser) => set({ artistPageUser }),
+      // Fresh open (or close) — clears any drill history
+      setArtistPage: (artistPageUser) => set({ artistPageUser, artistHistory: [] }),
+      // Drill deeper (following/followers) — remember where we were for Back
+      drillArtist: (user) => set(s => (s.artistPageUser ? { artistPageUser: user, artistHistory: [...s.artistHistory, s.artistPageUser] } : { artistPageUser: user })),
+      backArtist: () => set(s => { const h = [...s.artistHistory]; const prev = h.pop(); return { artistPageUser: prev ?? null, artistHistory: h } }),
     }),
     {
       name: 'sc-ui',
@@ -589,6 +675,27 @@ export const useLyrics = create<LyricsState>()(
       migrate: () => ({ available: {} }),
       partialize: (s) => ({ available: s.available }),
     }
+  )
+)
+
+// ── Update / releases (powers the banner + Versions tab) ────────────────────
+interface UpdateState {
+  current: string
+  releases: Release[]
+  dismissed: string | null // tag the user dismissed the banner for
+  setData: (current: string, releases: Release[]) => void
+  dismiss: (tag: string) => void
+}
+export const useUpdate = create<UpdateState>()(
+  persist(
+    (set) => ({
+      current: '',
+      releases: [],
+      dismissed: null,
+      setData: (current, releases) => set({ current, releases }),
+      dismiss: (dismissed) => set({ dismissed }),
+    }),
+    { name: 'sc-update', partialize: (s) => ({ dismissed: s.dismissed }) }
   )
 )
 
