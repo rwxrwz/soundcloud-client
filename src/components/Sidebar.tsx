@@ -233,7 +233,7 @@ export function Sidebar() {
 }
 
 function VolumeColumn({ accentHex }: { accentHex: string }) {
-  const { volume, setVolume } = usePlayer()
+  const { volume, setVolume, toggleMute } = usePlayer()
   const trackRef = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState(false)
   const [hovering, setHovering] = useState(false)
@@ -303,7 +303,7 @@ function VolumeColumn({ accentHex }: { accentHex: string }) {
         }} />
       </div>
       <button
-        onClick={() => setVolume(volume === 0 ? 0.7 : 0)}
+        onClick={toggleMute}
         className="text-white/40 hover:text-white/80 transition-colors"
         title="Mute"
       >

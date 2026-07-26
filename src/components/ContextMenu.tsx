@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { usePlayer, useUI, useToast } from '../store'
 import { sc } from '../services/soundcloud'
 import { findGeniusLink, geniusSearchUrl, type GeniusLink } from '../services/genius'
@@ -33,8 +33,10 @@ export function ContextMenu() {
     return () => { cancelled = true }
   }, [contextMenu?.track.id])
 
-  // Keep the menu on-screen
-  useEffect(() => {
+  // Position + keep on-screen. useLayoutEffect so the final coords are applied
+  // before the browser paints — otherwise the menu flashes at the previous/zero
+  // position and visibly jumps ("opens crooked").
+  useLayoutEffect(() => {
     if (!contextMenu) return
     const el = ref.current
     let x = contextMenu.x, y = contextMenu.y
@@ -43,7 +45,7 @@ export function ContextMenu() {
       if (x + r.width > window.innerWidth) x = window.innerWidth - r.width - 8
       if (y + r.height > window.innerHeight) y = window.innerHeight - r.height - 8
     }
-    setPos({ x, y })
+    setPos({ x: Math.max(8, x), y: Math.max(8, y) })
   }, [contextMenu])
 
   useEffect(() => {
@@ -124,6 +126,7 @@ export function ContextMenu() {
       className="fixed z-[200] py-1.5 rounded-xl"
       style={{
         top: pos.y, left: pos.x, minWidth: 190,
+        maxHeight: 'calc(100vh - 16px)', overflowY: 'auto', overflowX: 'hidden',
         background: 'rgba(20,20,26,0.97)',
         border: '1px solid rgba(255,255,255,0.1)',
         boxShadow: '0 8px 32px rgba(0,0,0,0.5)',

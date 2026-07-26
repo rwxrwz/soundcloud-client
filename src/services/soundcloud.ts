@@ -338,6 +338,11 @@ class SoundCloudService {
     await this.scWrite('DELETE', `/me/followings/${artistId}`)
   }
 
+  // Resolve a public SoundCloud track URL to a hydrated track.
+  async resolveTrack(url: string): Promise<SCTrack> {
+    return this.get<SCTrack>('/resolve', { url: url.trim() })
+  }
+
   // Resolve a public SoundCloud playlist URL to its title + full track list.
   async resolvePlaylist(url: string): Promise<{ title: string; tracks: SCTrack[] }> {
     const pl = await this.get<SCPlaylist>('/resolve', { url: url.trim() })

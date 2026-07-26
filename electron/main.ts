@@ -1,14 +1,9 @@
 import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, safeStorage, protocol } from 'electron'
 import { join, relative, isAbsolute } from 'path'
 import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync, readdirSync } from 'fs'
-import { Client } from '@xhayper/discord-rpc'
-import { startBridge, stopBridge, bridgeSetState, bridgeProgress, bridgeAudio, type BridgeState } from './bridge'
+import { startBridge, stopBridge, bridgeSetState, bridgeProgress, bridgeAudio, bridgeSpectrum, type BridgeState } from './bridge'
 
 const ICON_PATH = join(__dirname, '../../buildResources/icon_rounded.ico')
-
-// Create your own app at https://discord.com/developers/applications and paste its
-// Application ID here. The app's NAME is shown as "Listening to <name>" in Discord.
-const DISCORD_CLIENT_ID = '1380000000000000000'
 
 let mainWindow: BrowserWindow | null = null
 let miniWindow: BrowserWindow | null = null
@@ -18,6 +13,15 @@ let closeToTray = true   // when false, closing the window quits the app
 let lastPlayerState: unknown = null
 // Hidden SC-context window — kept alive after auth so DataDome cookies stay valid
 let scProxy: BrowserWindow | null = null
+
+// Keep the renderer running at full speed when the window is minimized/in tray.
+// Chromium otherwise clamps background timers to 1/sec and deprioritizes hidden
+// renderers, which stalls the ~30/sec audio-level emission that drives the
+// companion overlay's beat glow while music plays in the background. Must be set
+// before app is ready.
+app.commandLine.appendSwitch('disable-background-timer-throttling')
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 
 // Custom scheme for serving local video wallpapers while webSecurity is on
 // (a file:// page/origin can't load arbitrary file:// resources). Must be
@@ -40,57 +44,6 @@ function assertScUrl(raw: string): void {
   }
 }
 
-// ── Discord Rich Presence ───────────────────────────────────────────────────
-let rpc: Client | null = null
-let rpcReady = false
-let rpcEnabled = false
-let lastRpcKey = ''
-
-interface PState { currentTrack?: { title: string; user?: { username: string } } | null; isPlaying?: boolean }
-
-async function connectRpc(): Promise<void> {
-  if (rpc) return
-  rpc = new Client({ clientId: DISCORD_CLIENT_ID })
-  rpc.on('ready', () => { rpcReady = true; updateDiscordActivity() })
-  try {
-    await rpc.login()
-  } catch {
-    // Discord not running / not installed — silently ignore
-    rpc = null
-    rpcReady = false
-  }
-}
-
-function disconnectRpc(): void {
-  try { rpc?.user?.clearActivity() } catch {}
-  try { rpc?.destroy() } catch {}
-  rpc = null
-  rpcReady = false
-  lastRpcKey = ''
-}
-
-function updateDiscordActivity(): void {
-  if (!rpcEnabled || !rpc || !rpcReady) return
-  const s = lastPlayerState as PState | null
-  // Dedupe: only push to Discord when the track or play-state changes, not on
-  // every progress tick (Discord rate-limits setActivity to ~5 per 20s).
-  const key = s?.currentTrack && s.isPlaying ? `${s.currentTrack.title}|${s.isPlaying}` : 'idle'
-  if (key === lastRpcKey) return
-  lastRpcKey = key
-  if (s?.currentTrack && s.isPlaying) {
-    rpc.user?.setActivity({
-      type: 2, // Listening
-      details: s.currentTrack.title?.slice(0, 128) || 'SoundCloud',
-      state: s.currentTrack.user?.username ? `— ${s.currentTrack.user.username}`.slice(0, 128) : undefined,
-      largeImageKey: 'soundcloud',
-      largeImageText: 'SoundCloud',
-      instance: false,
-    }).catch(() => {})
-  } else {
-    rpc.user?.clearActivity().catch(() => {})
-  }
-}
-
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -105,7 +58,12 @@ function createMainWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      webSecurity: true
+      webSecurity: true,
+      // Keep rAF alive when the window is minimized/in tray, otherwise the ~30/sec
+      // audio-level emission (a requestAnimationFrame loop in useBridge) freezes and
+      // the companion overlay never receives beat data while music plays in the
+      // background. progress survives without this only because it's a 1/sec setInterval.
+      backgroundThrottling: false
     }
   })
 
@@ -418,19 +376,17 @@ ipcMain.handle('window-close', () => mainWindow?.close())
 // System: close-button behaviour (hide to tray vs quit)
 ipcMain.handle('set-close-to-tray', (_, enabled: boolean) => { closeToTray = !!enabled })
 
-// System: launch the app on Windows login
+// System: launch the app on Windows login.
+// This is a "portable" build: at runtime process.execPath points at the temp
+// extraction dir, which is useless for a Run-key entry (it changes each launch).
+// electron-builder exposes the real launched .exe in PORTABLE_EXECUTABLE_FILE —
+// register that so Windows relaunches the actual portable exe at login.
+const loginExePath = () => process.env.PORTABLE_EXECUTABLE_FILE || process.execPath
 ipcMain.handle('set-login-item', (event, enabled: boolean) => {
   if (!isTrustedSender(event)) return
-  app.setLoginItemSettings({ openAtLogin: !!enabled })
+  app.setLoginItemSettings({ openAtLogin: !!enabled, path: loginExePath(), args: [] })
 })
-ipcMain.handle('get-login-item', () => app.getLoginItemSettings().openAtLogin)
-
-// Discord Rich Presence enable/disable from renderer settings
-ipcMain.handle('set-discord-rpc', async (_, enabled: boolean) => {
-  rpcEnabled = enabled
-  if (enabled) { await connectRpc(); updateDiscordActivity() }
-  else disconnectRpc()
-})
+ipcMain.handle('get-login-item', () => app.getLoginItemSettings({ path: loginExePath(), args: [] }).openAtLogin)
 
 // State broadcast: main renderer → main process → mini window
 ipcMain.on('player-state-update', (_, state) => {
@@ -438,7 +394,6 @@ ipcMain.on('player-state-update', (_, state) => {
   if (miniWindow && !miniWindow.isDestroyed()) {
     miniWindow.webContents.send('player-state', state)
   }
-  updateDiscordActivity()
 })
 
 // Control commands: mini window → main process → main renderer
@@ -452,6 +407,7 @@ ipcMain.on('player-control', (_, action) => {
 ipcMain.on('bridge:state', (_, state: BridgeState) => bridgeSetState(state))
 ipcMain.on('bridge:progress', (_, p: { position: number; playing: boolean }) => bridgeProgress(p.position, p.playing))
 ipcMain.on('bridge:audio', (_, a: { level: number; bass: number }) => bridgeAudio(a.level, a.bass))
+ipcMain.on('bridge:spectrum', (_, bars: number[]) => bridgeSpectrum(bars))
 
 // Auth handler: opens SoundCloud signin, waits for login, then grabs credentials automatically
 ipcMain.handle('sc-auth', async () => {
@@ -565,4 +521,4 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin' && (isQuitting || !closeToTray)) app.quit()
 })
 
-app.on('before-quit', () => { isQuitting = true; disconnectRpc(); stopBridge() })
+app.on('before-quit', () => { isQuitting = true; stopBridge() })

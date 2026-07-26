@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   bridgeSendState: (state: unknown) => ipcRenderer.send('bridge:state', state),
   bridgeSendProgress: (position: number, playing: boolean) => ipcRenderer.send('bridge:progress', { position, playing }),
   bridgeSendAudio: (level: number, bass: number) => ipcRenderer.send('bridge:audio', { level, bass }),
+  bridgeSendSpectrum: (bars: number[]) => ipcRenderer.send('bridge:spectrum', bars),
   onBridgeCommand: (cb: (cmd: { action: string; value?: number | boolean | string }) => void) => {
     const handler = (_: Electron.IpcRendererEvent, cmd: { action: string; value?: number | boolean | string }) => cb(cmd)
     ipcRenderer.on('bridge:command', handler)
@@ -49,9 +50,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
-
-  // Discord Rich Presence
-  setDiscordRpc: (enabled: boolean) => ipcRenderer.invoke('set-discord-rpc', enabled),
 
   // System preferences
   setCloseToTray: (enabled: boolean) => ipcRenderer.invoke('set-close-to-tray', enabled),

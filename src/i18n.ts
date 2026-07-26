@@ -49,7 +49,6 @@ const DICT: Dict = {
   perfMiniSub:    { ru: 'Окно станет прямоугольным. Применится при следующем открытии', en: 'The window becomes a plain rectangle. Applies next time it opens' },
   perfMiniNote:   { ru: 'Мини-плеер сам по себе лёгкий — дорого тут отдельное окно. Больше всего экономит просто не держать его открытым.', en: 'The mini-player itself is light - the cost is the extra window. The best saving is not keeping it open.' },
   sidebarTabs:       { ru: 'Вкладки бокового бара', en: 'Sidebar tabs' },
-  sidebarTabsSub:    { ru: 'Какие пункты показывать в боковом баре. Скрытые страницы остаются доступны из других мест.', en: 'Which items show in the sidebar. Hidden pages stay reachable from elsewhere.' },
 
   // Sidebar / common
   settings:      { ru: 'Настройки', en: 'Settings' },
@@ -107,8 +106,6 @@ const DICT: Dict = {
   eqPresetImported: { ru: 'Пресет импортирован', en: 'Preset imported' },
   eqImportFail:   { ru: 'В буфере нет кода пресета', en: 'No preset code in clipboard' },
   language:      { ru: 'Язык',      en: 'Language' },
-  discordRpc:    { ru: 'Статус в Discord', en: 'Discord status' },
-  discordRpcSub: { ru: 'В разработке', en: 'In development' },
   account:       { ru: 'Аккаунт',   en: 'Account' },
   signOut:       { ru: 'Выйти',     en: 'Sign out' },
 
@@ -176,6 +173,7 @@ const DICT: Dict = {
   followErr:     { ru: 'Не удалось подписаться', en: 'Could not follow' },
   tracksLabel:   { ru: 'Треки',    en: 'Tracks' },
   searchPlaceholder: { ru: 'Искать треки, артистов...', en: 'Search tracks, artists...' },
+  clearSearch:       { ru: 'Очистить', en: 'Clear' },
   searchInPlaylist:  { ru: 'Искать в плейлисте', en: 'Search in playlist' },
   searchInLikes:     { ru: 'Искать в лайках', en: 'Search in likes' },
   closeSearch:   { ru: 'Закрыть поиск', en: 'Close search' },
@@ -224,10 +222,19 @@ const DICT: Dict = {
 
   // Settings categories
   catProfile:    { ru: 'Профиль',   en: 'Profile' },
+  catAccount:    { ru: 'Аккаунт',   en: 'Account' },
   catAppearance: { ru: 'Оформление', en: 'Appearance' },
   catSound:      { ru: 'Звук',      en: 'Sound' },
   catSystem:     { ru: 'Система',   en: 'System' },
   catVersions:   { ru: 'Версии',    en: 'Versions' },
+  catInfo:       { ru: 'Инфо',      en: 'Info' },
+  settingsPresetsTitle: { ru: 'Пресеты настроек', en: 'Settings presets' },
+  settingsPresetsSub:   { ru: 'Сохрани текущий вид и поведение как пресет и переключайся одним кликом.', en: 'Save the current look and behaviour as a preset, switch with one click.' },
+  settingsPresetsEmpty: { ru: 'Пока нет сохранённых пресетов.', en: 'No saved presets yet.' },
+  settingsPresetSaved:  { ru: 'Пресет сохранён', en: 'Preset saved' },
+  settingsPresetApplied:{ ru: 'Пресет применён', en: 'Preset applied' },
+  infoLine1:     { ru: 'Это бесплатный клиент для SoundCloud.', en: 'This is a free SoundCloud client.' },
+  infoLine2:     { ru: 'Если вы за него заплатили - вас наебали.', en: 'If you paid for it, you got scammed.' },
   langSoon:      { ru: 'Скоро',     en: 'Soon' },
 
   // Versions / updates
@@ -255,19 +262,11 @@ const DICT: Dict = {
 
   // System
   startPage:        { ru: 'Стартовая страница', en: 'Start page' },
-  startPageSub:     { ru: 'Открывается при запуске приложения', en: 'Shown when the app launches' },
   behavior:         { ru: 'Поведение', en: 'Behavior' },
   closeToTray:      { ru: 'Сворачивать в трей', en: 'Minimize to tray' },
-  closeToTraySub:   { ru: 'Кнопка закрытия прячет окно вместо выхода', en: 'Close button hides the window instead of quitting' },
   mediaKeys:        { ru: 'Медиа-клавиши', en: 'Media keys' },
-  mediaKeysSub:     { ru: 'Управление воспроизведением с клавиатуры', en: 'Keyboard playback shortcuts' },
   launchAtStartup:  { ru: 'Запуск при старте Windows', en: 'Launch at Windows startup' },
-  launchAtStartupSub:{ ru: 'Автоматически запускать при входе в систему', en: 'Start automatically on login' },
   autoSkipDrm:      { ru: 'Авто-пропуск DRM-треков', en: 'Auto-skip DRM tracks' },
-  autoSkipDrmSub:   { ru: 'Пропускать защищённые треки вместо остановки', en: 'Skip protected tracks instead of stopping' },
-  settingsBackup:   { ru: 'Резервная копия настроек', en: 'Settings backup' },
-  exportSettings:   { ru: 'Экспорт', en: 'Export' },
-  importSettings:   { ru: 'Импорт', en: 'Import' },
   resetSettings:    { ru: 'Сбросить все настройки', en: 'Reset all settings' },
   resetConfirm:     { ru: 'Точно сбросить?', en: 'Really reset?' },
   shortcuts:        { ru: 'Горячие клавиши', en: 'Keyboard shortcuts' },
@@ -290,7 +289,6 @@ const DICT: Dict = {
 
   // Home animation
   theme:           { ru: 'Тема оформления', en: 'Theme' },
-  themeSub:        { ru: 'Меняет стиль поверхностей, свечение и углы. Акцент настраивается отдельно.', en: 'Changes surfaces, glow and corners. Accent is set separately.' },
   themeDefault:    { ru: 'Default',  en: 'Default' },
   themeDefaultSub: { ru: 'Текущий вид · мягкое стекло', en: 'Current look · soft glass' },
   themeGlass:      { ru: 'Стекло',   en: 'Glass' },

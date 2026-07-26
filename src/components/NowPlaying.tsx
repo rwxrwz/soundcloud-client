@@ -16,8 +16,8 @@ export function NowPlaying() {
   const [localProgress, setLocalProgress] = useState<number | null>(null)
   const draggingRef = useRef(false)
 
-  const { currentTrack, isPlaying, volume, progress, duration, setPlaying, setVolume, nextTrack, prevTrack, repeat, shuffle, toggleRepeat, toggleShuffle, queue, playbackError } = usePlayer()
-  const { setBgColor, setArtRgb, setShowTrackPage, setArtistPage, showQueue, setShowQueue, showFullscreen, setShowFullscreen, setPlaylistPickerTrack, showTrackPage, artistPageUser, selectedAlbum } = useUI()
+  const { currentTrack, isPlaying, volume, progress, duration, setPlaying, setVolume, toggleMute, nextTrack, prevTrack, repeat, shuffle, toggleRepeat, toggleShuffle, queue, playbackError } = usePlayer()
+  const { setBgColor, setArtRgb, setShowTrackPage, setArtistPage, showQueue, setShowQueue, showFullscreen, setShowFullscreen, setPlaylistPickerTrack, setContextMenu, showTrackPage, artistPageUser, selectedAlbum } = useUI()
   // Compact = the island is narrowed & floating over a browsing overlay. Hide the
   // artwork and secondary buttons there to keep it clean.
   const compact = !!(showTrackPage || artistPageUser || selectedAlbum)
@@ -161,6 +161,7 @@ export function NowPlaying() {
         <div
           ref={artworkDivRef}
           onClick={openFullscreen}
+          onContextMenu={(e) => { if (!currentTrack) return; e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track: currentTrack }) }}
           className="relative w-14 h-14 rounded-xl overflow-hidden bg-white/5 shrink-0 cursor-pointer"
           title={t('fullscreen')}
         >
@@ -344,9 +345,12 @@ export function NowPlaying() {
           </button>
           )}
         </div>
-        <div className="flex items-center gap-2 w-full">
+        <div
+          className="flex items-center gap-2 w-full"
+          onWheel={(e) => setVolume(Math.round(Math.min(1, Math.max(0, volume - Math.sign(e.deltaY) * 0.05)) * 100) / 100)}
+        >
           <button
-            onClick={() => setVolume(volume === 0 ? 0.7 : 0)}
+            onClick={toggleMute}
             className="text-white/40 hover:text-white/80 transition-colors shrink-0"
           >
             {volume === 0 ? (

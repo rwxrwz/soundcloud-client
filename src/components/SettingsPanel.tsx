@@ -1,14 +1,15 @@
-import { useState, useEffect, useRef } from 'react'
-import { useSettings, useProfile, useUI, useUpdate, useToast, ACCENT_COLORS, EQ_BANDS, PerfKey, AccentColor, BgStyle, VisualizerStyle, HeroAnim, Theme, PlayerStyle, FsLayout, Lang, StartPage } from '../store'
+import { useState, useEffect, useMemo } from 'react'
+import { useSettings, useProfile, useUI, useUpdate, useToast, settingsSnapshot, ACCENT_COLORS, EQ_BANDS, PerfKey, AccentColor, BgStyle, VisualizerStyle, HeroAnim, Theme, PlayerStyle, FsLayout, Lang, StartPage } from '../store'
 import { checkForUpdates, latestStable, cmpVersion } from '../services/updates'
 import { encodeEqPreset, decodeEqPreset } from '../services/eqPresets'
+import { encodeSettingsPreset, decodeSettingsPreset } from '../services/settingsPresetCode'
 import { NAV } from './Sidebar'
 import { useT } from '../i18n'
 
 interface Props { onClose: () => void }
 
 const EQ_LABELS = ['60', '250', '1k', '4k', '12k']
-type Category = 'profile' | 'appearance' | 'sound' | 'system' | 'perf' | 'language' | 'discord' | 'versions'
+type Category = 'profile' | 'appearance' | 'sound' | 'system' | 'versions' | 'info'
 
 export function SettingsPanel({ onClose }: Props) {
   const t = useT()
@@ -25,14 +26,12 @@ export function SettingsPanel({ onClose }: Props) {
   }, [])
 
   const NAV: { id: Category; label: string; icon: JSX.Element }[] = [
-    { id: 'profile',    label: t('catProfile'),    icon: <IconUser /> },
+    { id: 'profile',    label: t('catAccount'),    icon: <IconUser /> },
     { id: 'appearance', label: t('catAppearance'), icon: <IconPalette /> },
     { id: 'sound',      label: t('catSound'),      icon: <IconSound /> },
     { id: 'system',     label: t('catSystem'),     icon: <IconSystem /> },
-    { id: 'perf',       label: t('catPerf'),       icon: <IconPerf /> },
-    { id: 'language',   label: t('language'),      icon: <IconGlobe /> },
-    { id: 'discord',    label: 'Discord',          icon: <IconDiscord /> },
     { id: 'versions',   label: t('catVersions'),   icon: <IconVersions /> },
+    { id: 'info',       label: t('catInfo'),       icon: <IconInfo /> },
   ]
 
   return (
@@ -82,14 +81,12 @@ export function SettingsPanel({ onClose }: Props) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
-            {cat === 'profile' && <ProfileTab onClose={onClose} />}
-            {cat === 'appearance' && <AppearanceTab />}
+            {cat === 'profile' && <><ProfileTab onClose={onClose} /><LanguageTab /></>}
+            {cat === 'appearance' && <div className="space-y-2"><AppearanceTab /><PlayerTab /></div>}
             {cat === 'sound' && <SoundTab />}
             {cat === 'system' && <SystemTab />}
-            {cat === 'perf' && <PerfTab />}
-            {cat === 'language' && <LanguageTab />}
-            {cat === 'discord' && <DiscordTab />}
             {cat === 'versions' && <VersionsTab />}
+            {cat === 'info' && <InfoTab />}
           </div>
         </div>
       </div>
@@ -158,15 +155,20 @@ function ProfileTab({ onClose }: { onClose: () => void }) {
 }
 
 function AppearanceTab() {
-  const { accent, bgStyle, visualizerStyle, heroAnim, wallpaperPath, theme, playerStyle, fsLayout, fsShowLyrics, fsLiveBg, fsBeatGlow, fsArtCrossfade, lyricsFontScale, hiddenNav, toggleNavHidden, setAccent, setBgStyle, setVisualizerStyle, setHeroAnim, setWallpaperPath, setTheme, setPlayerStyle, setFsLayout, setFsShowLyrics, setFsLiveBg, setFsBeatGlow, setFsArtCrossfade, setLyricsFontScale } = useSettings()
-  const toggleLyrics = () => { const v = !fsShowLyrics; setFsShowLyrics(v); if (!v && fsLayout === 'stack') setFsLayout('side') }
+  const { accent, bgStyle, wallpaperPath, theme, setAccent, setBgStyle, setWallpaperPath, setTheme } = useSettings()
   const { artRgb } = useUI()
   const t = useT()
   const artworkHex = `#${artRgb.map(v => v.toString(16).padStart(2, '0')).join('')}`
+
+  const themeLabel: Record<Theme, string> = { default: t('themeDefault'), glass: t('themeGlass'), minimal: t('themeMinimal') }
+  const bgLabel: Record<string, string> = { artwork: t('bgDynamic'), accent: t('bgAccent'), aurora: t('bgAurora'), midnight: t('bgMidnight'), dark: t('bgDark'), wallpaper: t('videoWallpapers') }
+  const accentDotHex = accent === 'artwork' ? artworkHex : (ACCENT_COLORS[accent] ?? artworkHex)
+  const wpActive = bgStyle === 'wallpaper' && !!wallpaperPath
+  const wpName = wpActive ? wallpaperPath.split(/[\\/]/).pop() : t('wallpaperNone')
+
   return (
     <>
-      <Section title={t('theme')}>
-        <p className="text-[10px] text-white/30 mb-2.5 leading-tight">{t('themeSub')}</p>
+      <Collapsible title={t('theme')} defaultOpen preview={<PreviewText>{themeLabel[theme]}</PreviewText>}>
         <div className="grid grid-cols-2 gap-2.5">
           {([
             ['default', t('themeDefault'), t('themeDefaultSub')],
@@ -176,9 +178,71 @@ function AppearanceTab() {
             <ThemeCard key={val} theme={val} active={theme === val} label={label} sub={sub} onClick={() => setTheme(val)} />
           ))}
         </div>
-      </Section>
+      </Collapsible>
 
-      <Section title={t('playerStyleLabel')}>
+      <Collapsible title={t('accentColor')} preview={<span className="w-3.5 h-3.5 rounded-full inline-block shrink-0" style={{ background: accentDotHex, border: '1px solid rgba(255,255,255,0.2)' }} />}>
+        <div className="flex flex-wrap gap-2.5">
+          {(Object.entries(ACCENT_COLORS) as [AccentColor, string][]).map(([key, hex]) => (
+            <button
+              key={key}
+              onClick={() => setAccent(key)}
+              className="w-8 h-8 rounded-full transition-all duration-200 relative shrink-0"
+              style={{
+                background: hex,
+                transform: accent === key ? 'scale(1.18)' : 'scale(1)',
+                boxShadow: accent === key ? `0 0 12px 2px ${hex}66` : undefined,
+                border: key === 'white' ? '1px solid rgba(255,255,255,0.2)' : undefined,
+              }}
+              title={key}
+            >
+              {accent === key && (
+                <svg className="absolute inset-0 m-auto w-3.5 h-3.5" style={{ color: key === 'white' ? '#222' : '#fff' }} fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                </svg>
+              )}
+            </button>
+          ))}
+          <DynamicSwatch hex={artworkHex} active={accent === 'artwork'} onClick={() => setAccent('artwork')} title={t('vividArtwork')} />
+        </div>
+        {accent === 'artwork' && <p className="text-[10px] text-white/30 mt-2 leading-tight">{t('artworkChanges')}</p>}
+      </Collapsible>
+
+      <Collapsible title={t('background')} preview={<PreviewText>{bgLabel[bgStyle] ?? bgStyle}</PreviewText>}>
+        <div className="space-y-1.5">
+          {([
+            ['artwork', t('bgDynamic'),  t('bgDynamicSub')],
+            ['accent',  t('bgAccent'),   t('bgAccentSub')],
+            ['aurora',  t('bgAurora'),   t('bgAuroraSub')],
+            ['midnight',t('bgMidnight'), t('bgMidnightSub')],
+            ['dark',    t('bgDark'),     t('bgDarkSub')],
+          ] as [BgStyle, string, string][]).map(([val, label, sub]) => (
+            <RadioBtn key={val} active={bgStyle === val} onClick={() => setBgStyle(val)} label={label} sub={sub} />
+          ))}
+        </div>
+      </Collapsible>
+
+      <Collapsible title={t('videoWallpapers')} preview={<PreviewText>{wpName}</PreviewText>}>
+        <WallpaperSection
+          active={bgStyle === 'wallpaper'}
+          wallpaperPath={wallpaperPath}
+          onPick={(p) => { setWallpaperPath(p); setBgStyle('wallpaper') }}
+          onNone={() => setBgStyle('artwork')}
+        />
+      </Collapsible>
+    </>
+  )
+}
+
+function PlayerTab() {
+  const { bgStyle, visualizerStyle, heroAnim, playerStyle, fsLayout, fsShowLyrics, fsLiveBg, fsBeatGlow, fsArtCrossfade, lyricsFontScale, setVisualizerStyle, setHeroAnim, setPlayerStyle, setFsLayout, setFsShowLyrics, setFsLiveBg, setFsBeatGlow, setFsArtCrossfade, setLyricsFontScale } = useSettings()
+  const toggleLyrics = () => { const v = !fsShowLyrics; setFsShowLyrics(v); if (!v && fsLayout === 'stack') setFsLayout('side') }
+  const t = useT()
+  const psLabel: Record<PlayerStyle, string> = { default: t('psDefault'), fullscreen: t('psFullscreen') }
+  const vizLabel: Record<VisualizerStyle, string> = { bars: t('vizBars'), wave: t('vizWave'), mirror: t('vizMirror') }
+  const animLabel: Record<HeroAnim, string> = { wave: t('animWave'), threads: t('animThreads'), silk: t('animSilk'), mist: t('animMist'), weave: t('animWeave'), spectrum: t('animSpectrum') }
+  return (
+    <>
+      <Collapsible title={t('playerStyleLabel')} preview={<PreviewText>{psLabel[playerStyle]}</PreviewText>}>
         <div className="space-y-1.5">
           {([
             ['default',    t('psDefault'),    t('psDefaultSub')],
@@ -225,57 +289,9 @@ function AppearanceTab() {
             </div>
           </div>
         )}
-      </Section>
+      </Collapsible>
 
-      <Section title={t('accentColor')}>
-        <div className="flex flex-wrap gap-2.5">
-          {(Object.entries(ACCENT_COLORS) as [AccentColor, string][]).map(([key, hex]) => (
-            <button
-              key={key}
-              onClick={() => setAccent(key)}
-              className="w-8 h-8 rounded-full transition-all duration-200 relative shrink-0"
-              style={{
-                background: hex,
-                transform: accent === key ? 'scale(1.18)' : 'scale(1)',
-                boxShadow: accent === key ? `0 0 12px 2px ${hex}66` : undefined,
-                border: key === 'white' ? '1px solid rgba(255,255,255,0.2)' : undefined,
-              }}
-              title={key}
-            >
-              {accent === key && (
-                <svg className="absolute inset-0 m-auto w-3.5 h-3.5" style={{ color: key === 'white' ? '#222' : '#fff' }} fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                </svg>
-              )}
-            </button>
-          ))}
-          <DynamicSwatch hex={artworkHex} active={accent === 'artwork'} onClick={() => setAccent('artwork')} title={t('vividArtwork')} />
-        </div>
-        {accent === 'artwork' && <p className="text-[10px] text-white/30 mt-2 leading-tight">{t('artworkChanges')}</p>}
-      </Section>
-
-      <Section title={t('background')}>
-        <div className="space-y-1.5">
-          {([
-            ['artwork', t('bgDynamic'),  t('bgDynamicSub')],
-            ['accent',  t('bgAccent'),   t('bgAccentSub')],
-            ['aurora',  t('bgAurora'),   t('bgAuroraSub')],
-            ['midnight',t('bgMidnight'), t('bgMidnightSub')],
-            ['dark',    t('bgDark'),     t('bgDarkSub')],
-          ] as [BgStyle, string, string][]).map(([val, label, sub]) => (
-            <RadioBtn key={val} active={bgStyle === val} onClick={() => setBgStyle(val)} label={label} sub={sub} />
-          ))}
-        </div>
-      </Section>
-
-      <WallpaperSection
-        active={bgStyle === 'wallpaper'}
-        wallpaperPath={wallpaperPath}
-        onPick={(p) => { setWallpaperPath(p); setBgStyle('wallpaper') }}
-        onNone={() => setBgStyle('artwork')}
-      />
-
-      <Section title={t('visualizer')}>
+      <Collapsible title={t('visualizer')} preview={<PreviewText>{vizLabel[visualizerStyle]}</PreviewText>}>
         <div className="space-y-1.5">
           {([
             ['bars',   t('vizBars'),   t('vizBarsSub')],
@@ -285,11 +301,11 @@ function AppearanceTab() {
             <RadioBtn key={val} active={visualizerStyle === val} onClick={() => setVisualizerStyle(val)} label={label} sub={sub} />
           ))}
         </div>
-      </Section>
+      </Collapsible>
 
       {/* Home animation only matters in the default player style */}
       {playerStyle !== 'fullscreen' && (
-      <Section title={t('heroAnimation')}>
+      <Collapsible title={t('heroAnimation')} preview={<PreviewText>{animLabel[heroAnim]}</PreviewText>}>
         <div className="space-y-1.5">
           {([
             ['wave',     t('animWave'),     t('animWaveSub')],
@@ -302,26 +318,8 @@ function AppearanceTab() {
             <RadioBtn key={val} active={heroAnim === val} onClick={() => setHeroAnim(val)} label={label} sub={sub} />
           ))}
         </div>
-      </Section>
+      </Collapsible>
       )}
-
-
-      <Section title={t('sidebarTabs')}>
-        <p className="text-[10px] text-white/30 mb-2.5 leading-tight">{t('sidebarTabsSub')}</p>
-        <div className="flex flex-col gap-1">
-          {NAV.map(item => {
-            const visible = !hiddenNav.includes(item.id)
-            // Never let the rail end up completely empty
-            const lastOne = visible && hiddenNav.length >= NAV.length - 1
-            return (
-              <div key={item.id} className="flex items-center justify-between py-1.5">
-                <span className="text-sm text-white/80">{t(item.key)}</span>
-                <Toggle active={visible} disabled={lastOne} onClick={() => toggleNavHidden(item.id)} />
-              </div>
-            )
-          })}
-        </div>
-      </Section>
     </>
   )
 }
@@ -500,41 +498,18 @@ function SoundTab() {
 }
 
 function SystemTab() {
-  const { startPage, setStartPage, closeToTray, setCloseToTray, mediaKeys, setMediaKeys, launchAtStartup, setLaunchAtStartup, autoSkipDrm, setAutoSkipDrm, resetSettings, importSettings } = useSettings()
+  const { startPage, setStartPage, closeToTray, setCloseToTray, mediaKeys, setMediaKeys, launchAtStartup, setLaunchAtStartup, autoSkipDrm, setAutoSkipDrm, hiddenNav, toggleNavHidden, resetSettings } = useSettings()
   const t = useT()
-  const fileRef = useRef<HTMLInputElement>(null)
   const [confirmReset, setConfirmReset] = useState(false)
 
   const toggleTray = (v: boolean) => { setCloseToTray(v); window.electronAPI?.setCloseToTray?.(v) }
   const toggleLaunch = (v: boolean) => { setLaunchAtStartup(v); window.electronAPI?.setLoginItem?.(v) }
 
-  // Re-push system prefs to the main process after a bulk change (import/reset)
+  // Re-push system prefs to the main process after a bulk change (reset)
   const syncSystem = () => {
     const s = useSettings.getState()
     window.electronAPI?.setCloseToTray?.(s.closeToTray)
     window.electronAPI?.setLoginItem?.(s.launchAtStartup)
-  }
-
-  const doExport = () => {
-    const s = useSettings.getState() as unknown as Record<string, unknown>
-    const data: Record<string, unknown> = {}
-    for (const k of Object.keys(s)) if (typeof s[k] !== 'function') data[k] = s[k]
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'soundcloud-player-settings.json'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const doImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    file.text().then(txt => {
-      try { importSettings(JSON.parse(txt)); syncSystem() } catch { /* invalid file */ }
-    })
   }
 
   const doReset = () => {
@@ -561,7 +536,6 @@ function SystemTab() {
   return (
     <>
       <Section title={t('startPage')}>
-        <p className="text-[10px] text-white/30 mb-2.5 leading-tight">{t('startPageSub')}</p>
         <div className="grid grid-cols-2 gap-2">
           {PAGES.map(([val, label]) => {
             const active = startPage === val
@@ -581,15 +555,34 @@ function SystemTab() {
       </Section>
 
       <Section title={t('behavior')}>
-        <div className="space-y-3.5">
-          <SystemToggle label={t('closeToTray')} sub={t('closeToTraySub')} active={closeToTray} onClick={() => toggleTray(!closeToTray)} />
-          <SystemToggle label={t('mediaKeys')} sub={t('mediaKeysSub')} active={mediaKeys} onClick={() => setMediaKeys(!mediaKeys)} />
-          <SystemToggle label={t('launchAtStartup')} sub={t('launchAtStartupSub')} active={launchAtStartup} onClick={() => toggleLaunch(!launchAtStartup)} />
-          <SystemToggle label={t('autoSkipDrm')} sub={t('autoSkipDrmSub')} active={autoSkipDrm} onClick={() => setAutoSkipDrm(!autoSkipDrm)} />
+        <div className="space-y-2.5">
+          <FsToggleRow label={t('closeToTray')} active={closeToTray} onClick={() => toggleTray(!closeToTray)} />
+          <FsToggleRow label={t('mediaKeys')} active={mediaKeys} onClick={() => setMediaKeys(!mediaKeys)} />
+          <FsToggleRow label={t('launchAtStartup')} active={launchAtStartup} onClick={() => toggleLaunch(!launchAtStartup)} />
+          <FsToggleRow label={t('autoSkipDrm')} active={autoSkipDrm} onClick={() => setAutoSkipDrm(!autoSkipDrm)} />
         </div>
       </Section>
 
-      <Section title={t('shortcuts')}>
+      <Collapsible title={t('sidebarTabs')}>
+        <div className="flex flex-col gap-0.5">
+          {NAV.map(item => {
+            const visible = !hiddenNav.includes(item.id)
+            const lastOne = visible && hiddenNav.length >= NAV.length - 1
+            return (
+              <div key={item.id} className="flex items-center justify-between py-1.5">
+                <span className="text-sm text-white/75">{t(item.key)}</span>
+                <Toggle active={visible} disabled={lastOne} onClick={() => toggleNavHidden(item.id)} />
+              </div>
+            )
+          })}
+        </div>
+      </Collapsible>
+
+      <Collapsible title={t('catPerf')}>
+        <PerfSection />
+      </Collapsible>
+
+      <Collapsible title={t('shortcuts')}>
         <div className="space-y-1">
           {SHORTCUTS.map(([keys, desc]) => (
             <div key={keys} className="flex items-center justify-between gap-3 py-1">
@@ -601,28 +594,15 @@ function SystemTab() {
             </div>
           ))}
         </div>
-      </Section>
+      </Collapsible>
 
-      <Section title={t('settingsBackup')}>
-        <div className="flex gap-2">
-          <button onClick={doExport}
-            className="flex-1 py-2 px-3 rounded-lg text-sm text-white/70 hover:text-white transition-all"
-            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
-            {t('exportSettings')}
-          </button>
-          <button onClick={() => fileRef.current?.click()}
-            className="flex-1 py-2 px-3 rounded-lg text-sm text-white/70 hover:text-white transition-all"
-            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
-            {t('importSettings')}
-          </button>
-          <input ref={fileRef} type="file" accept="application/json,.json" onChange={doImport} className="hidden" />
-        </div>
-        <button onClick={doReset} onMouseLeave={() => setConfirmReset(false)}
-          className="w-full mt-2 py-2 px-3 rounded-lg text-sm transition-all"
-          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
-          {confirmReset ? t('resetConfirm') : t('resetSettings')}
-        </button>
-      </Section>
+      <SettingsPresetsSection />
+
+      <button onClick={doReset} onMouseLeave={() => setConfirmReset(false)}
+        className="w-full py-2 px-3 rounded-lg text-sm transition-all"
+        style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
+        {confirmReset ? t('resetConfirm') : t('resetSettings')}
+      </button>
     </>
   )
 }
@@ -636,6 +616,142 @@ function SystemToggle({ label, sub, active, onClick }: { label: string; sub: str
       </div>
       <Toggle active={active} onClick={onClick} />
     </div>
+  )
+}
+
+function PresetIconBtn({ title, onClick, danger, children }: { title: string; onClick: () => void; danger?: boolean; children: React.ReactNode }) {
+  return (
+    <button title={title} onClick={onClick}
+      className={`p-1.5 rounded-md shrink-0 transition-colors ${danger ? 'text-white/40 hover:text-red-400' : 'text-white/40 hover:text-white/85'}`}>
+      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+        {children}
+      </svg>
+    </button>
+  )
+}
+
+// Whole-settings presets: snapshot the current look/behaviour, switch with a click.
+// The active chip is derived by comparing each preset against the live settings,
+// so it stays accurate without having to dirty-track every individual setter.
+function SettingsPresetsSection() {
+  const s = useSettings()
+  const showToast = useToast(st => st.show)
+  const t = useT()
+  const [nameModal, setNameModal] = useState<{ mode: 'save' | 'rename'; id?: string; value: string } | null>(null)
+
+  // A preset is "active" if every key it stores matches the live settings. Comparing
+  // by the preset's own keys (a subset) keeps presets saved by older versions - which
+  // captured fewer keys - matching correctly.
+  const current = useMemo(() => settingsSnapshot(s as unknown as Record<string, unknown>), [s])
+  const activeId = s.settingsPresets.find(p => {
+    const keys = Object.keys(p.data)
+    return keys.length > 0 && keys.every(k => JSON.stringify(p.data[k]) === JSON.stringify(current[k]))
+  })?.id ?? null
+
+  const submitName = () => {
+    if (!nameModal) return
+    const v = nameModal.value.trim()
+    if (!v) return
+    if (nameModal.mode === 'save') { s.saveSettingsPreset(v); showToast(t('settingsPresetSaved'), 'success') }
+    else if (nameModal.id) s.renameSettingsPreset(nameModal.id, v)
+    setNameModal(null)
+  }
+
+  // Some captured settings live in the main process (tray/login item), so re-push
+  // them after applying a preset that changed them.
+  const applyPreset = (id: string) => {
+    s.applySettingsPreset(id)
+    const st = useSettings.getState()
+    window.electronAPI?.setCloseToTray?.(st.closeToTray)
+    window.electronAPI?.setLoginItem?.(st.launchAtStartup)
+    showToast(t('settingsPresetApplied'), 'success')
+  }
+
+  const sharePreset = async (name: string, data: Record<string, unknown>) => {
+    try { await navigator.clipboard.writeText(encodeSettingsPreset(name, data)); showToast(t('eqCodeCopied'), 'success') } catch { /* ignore */ }
+  }
+  const importFromCode = async () => {
+    try {
+      const decoded = decodeSettingsPreset(await navigator.clipboard.readText())
+      if (!decoded) { showToast(t('eqImportFail'), 'error'); return }
+      s.addSettingsPreset(decoded.name, decoded.data)
+      showToast(t('eqPresetImported'), 'success')
+    } catch { showToast(t('eqImportFail'), 'error') }
+  }
+
+  return (
+    <Section title={t('settingsPresetsTitle')}>
+      <p className="text-[10px] text-white/30 mb-2.5 leading-tight">{t('settingsPresetsSub')}</p>
+
+      {s.settingsPresets.length > 0 ? (
+        <div className="flex flex-col gap-1.5 mb-3">
+          {s.settingsPresets.map(p => {
+            const active = activeId === p.id
+            return (
+              <div key={p.id} className="flex items-center gap-1 rounded-lg pl-1 pr-1"
+                style={{ background: active ? 'rgba(var(--accent-rgb),0.14)' : 'rgba(255,255,255,0.04)', border: `1px solid ${active ? 'rgba(var(--accent-rgb),0.4)' : 'rgba(255,255,255,0.07)'}` }}>
+                <button
+                  onClick={() => applyPreset(p.id)}
+                  className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 text-left"
+                  title={t('settingsPresetApplied')}
+                >
+                  {active && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--accent)' }} />}
+                  <span className="text-sm truncate" style={{ color: active ? '#fff' : 'rgba(255,255,255,0.8)' }}>{p.name}</span>
+                </button>
+                <PresetIconBtn title={t('eqShare')} onClick={() => sharePreset(p.name, p.data)}>
+                  <path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7M16 6l-4-4-4 4M12 2v13"/>
+                </PresetIconBtn>
+                <PresetIconBtn title={t('rename')} onClick={() => setNameModal({ mode: 'rename', id: p.id, value: p.name })}>
+                  <path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                </PresetIconBtn>
+                <PresetIconBtn title={t('delete')} danger onClick={() => s.deleteSettingsPreset(p.id)}>
+                  <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m2 0v14a1 1 0 01-1 1H7a1 1 0 01-1-1V6"/>
+                </PresetIconBtn>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="text-[11px] text-white/35 mb-3">{t('settingsPresetsEmpty')}</p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => setNameModal({ mode: 'save', value: '' })} className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          + {t('eqSavePreset')}
+        </button>
+        <button onClick={importFromCode} className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          {t('eqImportPreset')}
+        </button>
+      </div>
+
+      {nameModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center playlist-picker-backdrop" onClick={e => { if (e.target === e.currentTarget) setNameModal(null) }}>
+          <div className="playlist-picker-panel glass-island rounded-2xl w-80 overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/8">
+              <p className="text-sm font-semibold text-white/90">{nameModal.mode === 'save' ? t('eqSavePreset') : t('rename')}</p>
+            </div>
+            <div className="p-4 flex flex-col gap-3">
+              <input
+                autoFocus type="text" value={nameModal.value}
+                placeholder={t('eqNamePlaceholder')}
+                onChange={e => setNameModal({ ...nameModal, value: e.target.value })}
+                onKeyDown={e => { if (e.key === 'Enter') submitName(); if (e.key === 'Escape') setNameModal(null) }}
+                className="w-full rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none transition-all"
+                style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+                onFocus={e => { e.currentTarget.style.borderColor = 'rgba(var(--accent-rgb),0.5)' }}
+                onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
+              />
+              <div className="flex items-center gap-2">
+                <button onClick={() => setNameModal(null)} className="flex-1 py-2 rounded-xl text-sm font-medium text-white/60 hover:text-white/90 transition-all" style={{ background: 'rgba(255,255,255,0.06)' }}>{t('cancel')}</button>
+                <button onClick={submitName} disabled={!nameModal.value.trim()} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40" style={{ background: 'var(--accent)' }}>
+                  {nameModal.mode === 'save' ? t('eqSave') : t('rename')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </Section>
   )
 }
 
@@ -690,18 +806,26 @@ function LanguageTab() {
   )
 }
 
-function DiscordTab() {
+function InfoTab() {
   const t = useT()
+  const repo = 'https://github.com/rwxrwz/soundcloud-client'
   return (
-    <Section title="Discord">
-      <div className="flex items-center justify-between" style={{ opacity: 0.5 }}>
-        <div className="flex flex-col">
-          <span className="text-sm text-white/80">{t('discordRpc')}</span>
-          <span className="text-[10px]" style={{ color: 'var(--accent)' }}>{t('discordRpcSub')}</span>
-        </div>
-        <Toggle active={false} onClick={() => {}} />
+    <div className="flex flex-col gap-4">
+      <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <p className="text-sm text-white/85 leading-relaxed">{t('infoLine1')}</p>
+        <p className="text-sm text-white/50 leading-relaxed mt-1">{t('infoLine2')}</p>
       </div>
-    </Section>
+      <button
+        onClick={() => window.open(repo)}
+        className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm text-white/80 hover:text-white transition-all"
+        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+      >
+        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.21 3.44 9.63 8.2 11.19.6.11.82-.25.82-.56 0-.28-.01-1.02-.02-2-3.34.72-4.04-1.6-4.04-1.6-.55-1.38-1.34-1.75-1.34-1.75-1.09-.74.08-.73.08-.73 1.21.08 1.84 1.22 1.84 1.22 1.07 1.8 2.81 1.28 3.5.98.11-.76.42-1.28.76-1.57-2.67-.3-5.47-1.31-5.47-5.83 0-1.29.47-2.34 1.24-3.17-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.21.96-.26 1.98-.39 3-.4 1.02 0 2.04.14 3 .4 2.28-1.53 3.29-1.21 3.29-1.21.65 1.66.24 2.88.12 3.18.77.83 1.24 1.88 1.24 3.17 0 4.53-2.81 5.53-5.49 5.82.43.37.81 1.1.81 2.22 0 1.6-.01 2.9-.01 3.29 0 .31.21.68.83.56C20.57 21.91 24 17.49 24 12.29 24 5.78 18.63.5 12 .5z"/>
+        </svg>
+        github.com/rwxrwz/soundcloud-client
+      </button>
+    </div>
   )
 }
 
@@ -809,7 +933,7 @@ function WallpaperSection({ active, wallpaperPath, onPick, onNone }: {
   useEffect(() => { window.electronAPI?.wallpapersDir?.().then(setDir).catch(() => {}); load() }, [])
 
   return (
-    <Section title={t('videoWallpapers')}>
+    <>
       <div className="flex items-center gap-2 mb-2">
         <button onClick={() => window.electronAPI?.openWallpapers?.()}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white transition-all"
@@ -835,7 +959,7 @@ function WallpaperSection({ active, wallpaperPath, onPick, onNone }: {
       {list.length === 0 && <p className="text-[11px] text-white/35 mt-2">{t('wallpapersEmpty')}</p>}
       <p className="text-[10px] text-white/30 mt-2 leading-snug">{t('wallpapersHint')}</p>
       {dir && <p className="text-[10px] text-white/25 mt-1 break-all">{dir}</p>}
-    </Section>
+    </>
   )
 }
 
@@ -865,6 +989,46 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       {children}
     </div>
   )
+}
+
+// Collapsible block: a compact header row that reveals its content on click.
+// Keeps heavy, secondary sections from walling the tab. Content stays mounted
+// so it can animate open/close via a 0fr↔1fr grid-rows transition (handles
+// auto height) plus a fade.
+function Collapsible({ title, children, defaultOpen = false, preview }: { title: string; children: React.ReactNode; defaultOpen?: boolean; preview?: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl transition-all text-left"
+        style={{ background: open ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = open ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.03)' }}
+      >
+        <span className="text-sm text-white/75 shrink-0">{title}</span>
+        <span className="flex items-center gap-2.5 min-w-0">
+          {!open && preview && <span className="min-w-0 truncate">{preview}</span>}
+          <svg className="w-4 h-4 text-white/40 transition-transform duration-300 ease-out shrink-0" style={{ transform: open ? 'rotate(90deg)' : 'none' }}
+            fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+            <path d="M9 6l6 6-6 6"/>
+          </svg>
+        </span>
+      </button>
+      <div style={{ display: 'grid', gridTemplateRows: open ? '1fr' : '0fr', transition: 'grid-template-rows 0.3s cubic-bezier(0.16,1,0.3,1)' }}>
+        <div style={{ overflow: 'hidden' }}>
+          <div className="px-0.5" style={{ paddingTop: 12, opacity: open ? 1 : 0, transform: open ? 'none' : 'translateY(-4px)', transition: 'opacity 0.25s ease, transform 0.25s ease' }}>
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Small right-aligned summary shown on a collapsed Collapsible header.
+function PreviewText({ children }: { children: React.ReactNode }) {
+  return <span className="text-[11px] text-white/40 truncate">{children}</span>
 }
 
 function RadioBtn({ active, onClick, label, sub, disabled }: { active: boolean; onClick: () => void; label: string; sub?: string; disabled?: boolean }) {
@@ -904,7 +1068,7 @@ function FlagUS() { return <FlagImg code="1f1fa-1f1f8" alt="US" /> }
 
 // ── Performance ──────────────────────────────────────────────────────────────
 
-function PerfTab() {
+function PerfSection() {
   const t = useT()
   const s = useSettings()
   const rows: [PerfKey, string, string][] = [
@@ -917,17 +1081,15 @@ function PerfTab() {
   ]
   return (
     <>
-      <Section title={t('catPerf')}>
-        <div className="flex flex-col gap-1">
-          {rows.map(([key, label, sub]) => (
-            <SystemToggle key={key} label={label} sub={sub} active={s[key]} onClick={() => s.setPerf(key, !s[key])} />
-          ))}
-        </div>
-        <p className="text-[11px] text-white/35 leading-relaxed mt-3 p-3 rounded-lg"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-          {t('perfMiniNote')}
-        </p>
-      </Section>
+      <div className="flex flex-col gap-1">
+        {rows.map(([key, label, sub]) => (
+          <SystemToggle key={key} label={label} sub={sub} active={s[key]} onClick={() => s.setPerf(key, !s[key])} />
+        ))}
+      </div>
+      <p className="text-[11px] text-white/35 leading-relaxed mt-3 p-3 rounded-lg"
+        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+        {t('perfMiniNote')}
+      </p>
     </>
   )
 }
@@ -1034,18 +1196,12 @@ function IconPalette() {
 function IconSound() {
   return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><path d="M6 9v6M10 5v14M14 8v8M18 11v2"/></svg>
 }
-function IconGlobe() {
-  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18"/></svg>
-}
 function IconSystem() {
   return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
-}
-function IconPerf() {
-  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z"/></svg>
 }
 function IconVersions() {
   return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 2v14M12 22v-2M5 7l7-5 7 5v6c0 3-3 5-7 7-4-2-7-4-7-7z"/></svg>
 }
-function IconDiscord() {
-  return <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M20.3 4.4A19 19 0 0015.6 3l-.2.5a13 13 0 014.1 2 17 17 0 00-13 0 13 13 0 014.1-2L10.4 3a19 19 0 00-4.7 1.4C2.8 8.7 2 13 2.4 17.2A19 19 0 008 20l.6-1c-.9-.3-1.7-.7-2.4-1.2l.5-.4a13 13 0 0011 0l.5.4c-.7.5-1.5.9-2.4 1.2l.6 1a19 19 0 005.6-2.8c.5-4.9-.8-9.1-1.7-12.8zM9 15c-.9 0-1.6-.8-1.6-1.9S8.1 11.3 9 11.3s1.6.9 1.6 1.9S9.9 15 9 15zm6 0c-.9 0-1.6-.8-1.6-1.9s.7-1.8 1.6-1.8 1.6.9 1.6 1.9S15.9 15 15 15z"/></svg>
+function IconInfo() {
+  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".6" fill="currentColor"/></svg>
 }

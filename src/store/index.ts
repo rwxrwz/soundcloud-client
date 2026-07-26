@@ -11,6 +11,7 @@ interface PlayerState {
   history: number[]   // stack of visited queue indices, for "previous" with shuffle
   isPlaying: boolean
   volume: number
+  lastVolume: number   // last non-zero volume, restored on unmute
   progress: number
   duration: number
   shuffle: boolean
@@ -18,6 +19,7 @@ interface PlayerState {
   setTrack: (track: SCTrack, queue?: SCTrack[]) => void
   setPlaying: (v: boolean) => void
   setVolume: (v: number) => void
+  toggleMute: () => void
   setProgress: (v: number) => void
   setDuration: (v: number) => void
   nextTrack: () => void
@@ -123,6 +125,7 @@ export const usePlayer = create<PlayerState>()(
   history: [],
   isPlaying: false,
   volume: 0.8,
+  lastVolume: 0.8,
   progress: 0,
   duration: 0,
   shuffle: false,
@@ -144,7 +147,13 @@ export const usePlayer = create<PlayerState>()(
   },
 
   setPlaying: (v) => set({ isPlaying: v }),
-  setVolume: (v) => set({ volume: v }),
+  // Remember the last non-zero volume so mute -> unmute restores exactly it.
+  setVolume: (v) => set(v > 0 ? { volume: v, lastVolume: v } : { volume: v }),
+  toggleMute: () => {
+    const { volume, lastVolume } = get()
+    if (volume > 0) set({ volume: 0, lastVolume: volume })
+    else set({ volume: lastVolume > 0 ? lastVolume : 0.7 })
+  },
   setProgress: (v) => set({ progress: v }),
   setDuration: (v) => set({ duration: v }),
 
@@ -215,7 +224,7 @@ export const usePlayer = create<PlayerState>()(
     }),
     {
       name: 'sc-player',
-      partialize: (s) => ({ volume: s.volume, shuffle: s.shuffle, repeat: s.repeat }),
+      partialize: (s) => ({ volume: s.volume, lastVolume: s.lastVolume, shuffle: s.shuffle, repeat: s.repeat }),
     }
   )
 )
@@ -302,6 +311,62 @@ export type FsLayout = 'side' | 'stack' | 'split'
 export type Lang = 'ru' | 'en'
 export type StartPage = 'main' | 'stream' | 'releases' | 'likes' | 'playlists'
 
+// A named snapshot of the customisable client settings (look, feel, playback DSP).
+export type SettingsPreset = { id: string; name: string; data: Record<string, unknown> }
+
+// Which settings a preset captures. Excludes only the machine-specific paths/ids
+// (wallpaperPath, outputDeviceId) and the preset lists themselves. closeToTray and
+// launchAtStartup are captured too, so applying a preset must re-sync those to the
+// main process (the UI does this after applySettingsPreset).
+export const SETTINGS_PRESET_KEYS = [
+  'theme', 'accent', 'bgStyle', 'visualizerStyle', 'heroAnim',
+  'playerStyle', 'fsLayout', 'fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'lyricsFontScale',
+  'hiddenNav', 'startPage', 'lang',
+  'perfPauseUnfocused', 'perfLowFps', 'perfNoBlur', 'perfNoHeroAnim', 'perfMiniOpaque', 'perfBigLists',
+  'eq', 'eqEnabled', 'crossfade',
+  'closeToTray', 'mediaKeys', 'autoSkipDrm', 'launchAtStartup',
+] as const
+
+// Stable snapshot of the preset keys from a state object (hiddenNav sorted so
+// two equal sets compare equal regardless of toggle order).
+export function settingsSnapshot(s: Record<string, unknown>): Record<string, unknown> {
+  const o: Record<string, unknown> = {}
+  for (const k of SETTINGS_PRESET_KEYS) o[k] = s[k]
+  const copy = JSON.parse(JSON.stringify(o)) as Record<string, unknown>
+  if (Array.isArray(copy.hiddenNav)) copy.hiddenNav = [...(copy.hiddenNav as string[])].sort()
+  return copy
+}
+
+// Validate untrusted preset data (from a shared code): keep only known keys with
+// the right type / enum / range, so a hostile code can't poison the UI or audio.
+export function validateSettingsPresetData(d: Record<string, unknown>): Record<string, unknown> {
+  const ENUMS: Record<string, readonly string[]> = {
+    theme: ['default', 'glass', 'minimal'],
+    accent: [...Object.keys(ACCENT_COLORS), 'artwork'],
+    bgStyle: ['artwork', 'accent', 'dark', 'midnight', 'aurora', 'wallpaper'],
+    visualizerStyle: ['bars', 'wave', 'mirror'],
+    heroAnim: ['wave', 'threads', 'silk', 'mist', 'weave', 'spectrum'],
+    playerStyle: ['default', 'fullscreen'],
+    fsLayout: ['side', 'stack', 'split'],
+    startPage: ['main', 'stream', 'releases', 'likes', 'playlists'],
+    lang: ['ru', 'en'],
+  }
+  const boolKeys = new Set(['fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'perfPauseUnfocused', 'perfLowFps', 'perfNoBlur', 'perfNoHeroAnim', 'perfMiniOpaque', 'perfBigLists', 'eqEnabled', 'closeToTray', 'mediaKeys', 'autoSkipDrm', 'launchAtStartup'])
+  const out: Record<string, unknown> = {}
+  for (const key of SETTINGS_PRESET_KEYS) {
+    if (!(key in d)) continue
+    const val = d[key]
+    if (val === undefined || val === null) continue
+    if (key in ENUMS) { if (typeof val === 'string' && ENUMS[key].includes(val)) out[key] = val; continue }
+    if (boolKeys.has(key)) { if (typeof val === 'boolean') out[key] = val; continue }
+    if (key === 'lyricsFontScale') { if (typeof val === 'number' && isFinite(val)) out[key] = Math.max(0.7, Math.min(1.8, val)); continue }
+    if (key === 'crossfade') { if (typeof val === 'number' && isFinite(val)) out[key] = Math.max(0, Math.min(12, val)); continue }
+    if (key === 'eq') { if (Array.isArray(val) && val.length === 5 && val.every(n => typeof n === 'number' && isFinite(n))) out.eq = (val as number[]).map(n => Math.max(-12, Math.min(12, Math.round(n)))); continue }
+    if (key === 'hiddenNav') { if (Array.isArray(val) && val.every(v => typeof v === 'string')) out.hiddenNav = [...(val as string[])].sort(); continue }
+  }
+  return out
+}
+
 // 5-band EQ centre frequencies (Hz)
 export const EQ_BANDS = [60, 250, 1000, 4000, 12000]
 
@@ -332,8 +397,8 @@ interface SettingsState {
   eqEnabled: boolean
   eqPresets: EqPreset[]          // user-created presets
   activePresetId: string | null  // id of the applied preset (null = custom)
+  settingsPresets: SettingsPreset[]  // user-created whole-settings presets
   outputDeviceId: string   // '' = system default
-  discordRpc: boolean
   lyricsOpen: boolean
   crossfade: number        // crossfade between tracks, seconds (0 = off)
   startPage: StartPage      // page shown on app launch
@@ -365,8 +430,12 @@ interface SettingsState {
   renameEqPreset: (id: string, name: string) => void
   deleteEqPreset: (id: string) => void
   addEqPreset: (name: string, gains: number[]) => void
+  saveSettingsPreset: (name: string) => void
+  applySettingsPreset: (id: string) => void
+  renameSettingsPreset: (id: string, name: string) => void
+  deleteSettingsPreset: (id: string) => void
+  addSettingsPreset: (name: string, data: Record<string, unknown>) => void
   setOutputDeviceId: (id: string) => void
-  setDiscordRpc: (v: boolean) => void
   setLyricsOpen: (v: boolean) => void
   setCrossfade: (v: number) => void
   setStartPage: (p: StartPage) => void
@@ -375,7 +444,6 @@ interface SettingsState {
   setLaunchAtStartup: (v: boolean) => void
   setAutoSkipDrm: (v: boolean) => void
   resetSettings: () => void
-  importSettings: (data: Partial<SettingsState>) => void
 }
 
 // Data-only defaults (no actions) — reused for "reset to defaults"
@@ -405,8 +473,8 @@ const SETTINGS_DEFAULTS = {
   eqEnabled: false,
   eqPresets: [] as EqPreset[],
   activePresetId: null as string | null,
+  settingsPresets: [] as SettingsPreset[],
   outputDeviceId: '',
-  discordRpc: false,
   lyricsOpen: false,
   crossfade: 0,
   startPage: 'main' as StartPage,
@@ -466,8 +534,26 @@ export const useSettings = create<SettingsState>()(
         const preset: EqPreset = { id: `u:${Date.now().toString(36)}`, name: name.trim().slice(0, 40) || 'Preset', gains: g }
         return { eqPresets: [...s.eqPresets, preset] }
       }),
+      saveSettingsPreset: (name) => set(s => {
+        const preset: SettingsPreset = { id: `sp:${Date.now().toString(36)}`, name: name.trim().slice(0, 40) || 'Preset', data: settingsSnapshot(s as unknown as Record<string, unknown>) }
+        return { settingsPresets: [...s.settingsPresets, preset] }
+      }),
+      applySettingsPreset: (id) => set(s => {
+        const p = s.settingsPresets.find(pp => pp.id === id)
+        return p ? (p.data as Partial<SettingsState>) : {}
+      }),
+      renameSettingsPreset: (id, name) => set(s => ({
+        settingsPresets: s.settingsPresets.map(p => (p.id === id ? { ...p, name: name.trim().slice(0, 40) || p.name } : p)),
+      })),
+      deleteSettingsPreset: (id) => set(s => ({
+        settingsPresets: s.settingsPresets.filter(p => p.id !== id),
+      })),
+      addSettingsPreset: (name, data) => set(s => {
+        const clean = validateSettingsPresetData(data)
+        const preset: SettingsPreset = { id: `sp:${Date.now().toString(36)}`, name: name.trim().slice(0, 40) || 'Preset', data: clean }
+        return { settingsPresets: [...s.settingsPresets, preset] }
+      }),
       setOutputDeviceId: (outputDeviceId) => set({ outputDeviceId }),
-      setDiscordRpc: (discordRpc) => set({ discordRpc }),
       setLyricsOpen: (lyricsOpen) => set({ lyricsOpen }),
       setCrossfade: (crossfade) => set({ crossfade }),
       setStartPage: (startPage) => set({ startPage }),
@@ -476,50 +562,6 @@ export const useSettings = create<SettingsState>()(
       setLaunchAtStartup: (launchAtStartup) => set({ launchAtStartup }),
       setAutoSkipDrm: (autoSkipDrm) => set({ autoSkipDrm }),
       resetSettings: () => set({ ...SETTINGS_DEFAULTS }),
-      // Validate untrusted imported JSON: only accept known keys with the right
-      // type, clamp numeric ranges and reject invalid enum values, so a malformed
-      // or hostile file can't poison the audio graph or blank out the UI.
-      importSettings: (data) => set(() => {
-        const out: Record<string, unknown> = {}
-        const d = (data ?? {}) as Record<string, unknown>
-        const ENUMS: Record<string, readonly string[]> = {
-          startPage: ['main', 'stream', 'releases', 'likes', 'playlists'],
-          playerStyle: ['default', 'fullscreen'],
-          fsLayout: ['side', 'stack', 'split'],
-          theme: ['default', 'glass', 'minimal'],
-          bgStyle: ['artwork', 'accent', 'dark', 'midnight', 'aurora', 'wallpaper'],
-          visualizerStyle: ['bars', 'wave', 'mirror'],
-          heroAnim: ['wave', 'threads', 'silk', 'mist', 'weave', 'spectrum'],
-          accent: [...Object.keys(ACCENT_COLORS), 'artwork'],
-          lang: ['ru', 'en'],
-        }
-        for (const key of Object.keys(SETTINGS_DEFAULTS) as (keyof typeof SETTINGS_DEFAULTS)[]) {
-          if (!(key in d)) continue
-          // Never import a machine-specific local wallpaper path from a foreign file
-          if (key === 'wallpaperPath') continue
-          // EQ presets have their own share codes; don't pull them from a settings file
-          if (key === 'eqPresets' || key === 'activePresetId') continue
-          const val = d[key]
-          const def = SETTINGS_DEFAULTS[key]
-          if (val === undefined || val === null) continue
-          if (key === 'hiddenNav') {
-            if (Array.isArray(val) && val.every(v => typeof v === 'string')) out.hiddenNav = val as string[]
-            continue
-          }
-          if (key === 'eq') {
-            if (Array.isArray(val) && val.length === 5 && val.every(n => typeof n === 'number' && isFinite(n))) {
-              out.eq = (val as number[]).map(n => Math.max(-12, Math.min(12, n)))
-            }
-            continue
-          }
-          if (typeof val !== typeof def) continue
-          if (key in ENUMS && !ENUMS[key].includes(val as string)) continue
-          out[key] = val
-        }
-        if (typeof out.crossfade === 'number') out.crossfade = Math.max(0, Math.min(12, out.crossfade))
-        if (typeof out.lyricsFontScale === 'number') out.lyricsFontScale = Math.max(0.7, Math.min(1.8, out.lyricsFontScale))
-        return out as Partial<SettingsState>
-      }),
     }),
     {
       name: 'sc-settings',

@@ -105,6 +105,13 @@ export function bridgeAudio(level: number, bass: number) {
   broadcast({ type: 'audio', level, bass })
 }
 
+// Downsampled frequency spectrum (~20/sec while playing) for a companion
+// visualizer. bars: array of 0-255 magnitudes, low frequencies first. Transient,
+// not cached (a fresh client only needs it once audio starts flowing).
+export function bridgeSpectrum(bars: number[]) {
+  broadcast({ type: 'spectrum', bars })
+}
+
 export function stopBridge() {
   if (!wss) return
   for (const client of wss.clients) { try { client.terminate() } catch { /* ignore */ } }

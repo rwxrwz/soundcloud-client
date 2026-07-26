@@ -53,11 +53,6 @@ export function Player() {
     sc.setCredentials(clientId, oauthToken, user?.id)
   }, [clientId, oauthToken, user?.id])
 
-  // Sync Discord RPC enabled state to main process on startup
-  useEffect(() => {
-    window.electronAPI?.setDiscordRpc(useSettings.getState().discordRpc)
-  }, [])
-
   // Check GitHub for a newer release on startup (cached in main; safe if offline)
   useEffect(() => { void checkForUpdates() }, [])
 

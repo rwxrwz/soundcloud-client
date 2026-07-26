@@ -15,7 +15,7 @@ function fmt(n: number | undefined): string {
 
 export function TrackPage() {
   const { currentTrack } = usePlayer()
-  const { setShowTrackPage } = useUI()
+  const { setShowTrackPage, setContextMenu } = useUI()
   const t = useT()
   const [track, setTrack] = useState<SCTrack | null>(null)
   const [comments, setComments] = useState<SCComment[]>([])
@@ -86,6 +86,7 @@ export function TrackPage() {
           <div className="flex gap-6 pt-2 pb-6">
             {/* Artwork */}
             <div
+              onContextMenu={(e) => { const tr = track ?? currentTrack; if (!tr) return; e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track: tr }) }}
               className="shrink-0 rounded-2xl overflow-hidden bg-white/5"
               style={{
                 width: 200, height: 200,

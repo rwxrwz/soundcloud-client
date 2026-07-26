@@ -5,6 +5,7 @@ import { Player } from './pages/Player'
 import { MiniPlayer } from './components/MiniPlayer'
 import { Toaster } from './components/Toaster'
 import { WindowControls } from './components/WindowControls'
+import { SixSevenEgg } from './components/SixSevenEgg'
 
 export default function App() {
   const isMini = window.location.hash === '#mini'
@@ -48,6 +49,7 @@ function MainApp() {
       {user ? <Player /> : <Login />}
       <WindowControls />
       <Toaster />
+      <SixSevenEgg />
     </>
   )
 }

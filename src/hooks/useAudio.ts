@@ -16,6 +16,7 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
   const chGainRef = useRef<(GainNode | null)[]>([null, null])  // per-channel crossfade gain
   const masterGainRef = useRef<GainNode | null>(null)          // play/pause fade
   const analyserNodeRef = useRef<AnalyserNode | null>(null)
+  const bassAnalyserRef = useRef<AnalyserNode | null>(null)   // 2048-pt tap for companion beat detection
   const eqNodesRef = useRef<BiquadFilterNode[]>([])
   const activeRef = useRef(0)
   const firstLoadRef = useRef(true)
@@ -23,6 +24,7 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
   const drmSkipRef = useRef(0)     // consecutive DRM auto-skips (loop guard)
   const pauseTimers = useRef<(ReturnType<typeof setTimeout> | null)[]>([null, null]) // per-channel deferred pause
   const loadSeqRef = useRef(0)     // guards against out-of-order async track loads
+  const loadingRef = useRef(false) // a new track is loading; the load owns starting playback
 
   const { currentTrack, isPlaying, volume, setProgress, setDuration, nextTrack, repeat, seekRequest } = usePlayer()
   const { show: showToast } = useToast()
@@ -65,8 +67,19 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
     master.connect(analyser)
     analyser.connect(ctx.destination)
 
+    // Second, finer analyser tapped off master purely for the companion bridge's
+    // beat detection. fftSize 2048 gives ~21.5 Hz bins, so 20-150 Hz gets real
+    // resolution — the shared 256-pt analyser lumps all bass into bin 0 (DC),
+    // which sits pinned at ~255. Kept separate so the visualizers keep their
+    // 128-bin behaviour untouched. Analysis tap only, no output to destination.
+    const bassAnalyser = ctx.createAnalyser()
+    bassAnalyser.fftSize = 2048
+    bassAnalyser.smoothingTimeConstant = 0.5   // low, so onset flux stays sharp
+    master.connect(bassAnalyser)
+
     masterGainRef.current = master
     analyserNodeRef.current = analyser
+    bassAnalyserRef.current = bassAnalyser
   }
 
   // Init both audio elements once + listeners
@@ -161,6 +174,10 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
     // Token to ignore out-of-order resolutions when tracks are switched quickly:
     // only the most recent load is allowed to touch the audio graph.
     const myLoad = ++loadSeqRef.current
+    // While this is set, the isPlaying effect must not resume the outgoing (still
+    // active) element — otherwise the old track blips out before the load swaps in
+    // the new channel (audible especially with crossfade after a pause).
+    loadingRef.current = true
 
     sc.getStreamUrl(currentTrack).then((url: string) => {
       if (myLoad !== loadSeqRef.current) return  // superseded by a newer track change
@@ -220,10 +237,13 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
       }
 
       firstLoadRef.current = false
+      loadingRef.current = false
       analyserRef.current = analyserNodeRef.current
       audioBus.analyser = analyserNodeRef.current
+      audioBus.bassAnalyser = bassAnalyserRef.current
     }).catch((err: Error) => {
       if (myLoad !== loadSeqRef.current) return  // superseded — ignore stale error
+      loadingRef.current = false
       earlyRef.current = false
       console.error('getStreamUrl failed:', err?.message, 'track:', currentTrack?.title)
       const reason = err?.message === 'DRM'
@@ -251,7 +271,10 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
         master.gain.setValueAtTime(0.0001, ctx.currentTime)
         master.gain.exponentialRampToValueAtTime(1, ctx.currentTime + 0.25)
       }
-      a.play().catch(console.error)
+      // Don't resume the outgoing element while a new track is loading — the load
+      // effect starts the incoming track on its own channel. Resuming here would
+      // briefly play the old track before the swap.
+      if (!loadingRef.current) a.play().catch(console.error)
     } else {
       if (master && ctx) {
         master.gain.cancelScheduledValues(ctx.currentTime)

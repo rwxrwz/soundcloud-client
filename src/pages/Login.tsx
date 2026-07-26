@@ -22,12 +22,12 @@ declare global {
       bridgeSendState: (state: unknown) => void
       bridgeSendProgress: (position: number, playing: boolean) => void
       bridgeSendAudio: (level: number, bass: number) => void
+      bridgeSendSpectrum: (bars: number[]) => void
       onBridgeCommand: (cb: (cmd: { action: string; value?: number | boolean | string }) => void) => (() => void)
       scWrite: (method: string, url: string, body: unknown, oauthToken: string) => Promise<unknown>
       windowMinimize: () => Promise<void>
       windowMaximize: () => Promise<void>
       windowClose: () => Promise<void>
-      setDiscordRpc: (enabled: boolean) => Promise<void>
       setCloseToTray: (enabled: boolean) => Promise<void>
       setLoginItem: (enabled: boolean) => Promise<void>
       getLoginItem: () => Promise<boolean>
