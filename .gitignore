@@ -27,3 +27,6 @@ CONTEXT_HANDOFF.md
 buildResources/brand/
 *.tsbuildinfo
 CHANGELOG.md
+
+# Installed AppImage (built artifact kept in-repo for the launcher)
+/SoundCloud.AppImage

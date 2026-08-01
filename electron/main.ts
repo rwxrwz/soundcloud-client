@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, sa
 import { join, relative, isAbsolute } from 'path'
 import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync, readdirSync } from 'fs'
 import { startBridge, stopBridge, bridgeSetState, bridgeProgress, bridgeAudio, bridgeSpectrum, type BridgeState } from './bridge'
+import Mpris from 'mpris-service'
 
 const ICON_PATH = join(__dirname, '../../buildResources/icon_rounded.ico')
 
@@ -13,6 +14,10 @@ let closeToTray = true   // when false, closing the window quits the app
 let lastPlayerState: unknown = null
 // Hidden SC-context window — kept alive after auth so DataDome cookies stay valid
 let scProxy: BrowserWindow | null = null
+// Linux MPRIS now-playing/controls source (null on other platforms)
+let mprisPlayer: ReturnType<typeof Mpris> | null = null
+// In-flight DataDome captcha solve (shared across concurrent writes)
+let captchaPromise: Promise<void> | null = null
 
 // Keep the renderer running at full speed when the window is minimized/in tray.
 // Chromium otherwise clamps background timers to 1/sec and deprioritizes hidden
@@ -22,6 +27,25 @@ let scProxy: BrowserWindow | null = null
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+
+// Linux: disable Chromium's built-in MediaSession so only our clean `soundcloud`
+// MPRIS source is published. Otherwise Electron also exposes a parasite
+// `chromium.instance*` source (title just "SoundCloud") that media widgets latch
+// onto instead. Baked in here so the launcher no longer needs the manual
+// --disable-features flag. No-op on Windows/macOS.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('disable-features', 'MediaSessionService')
+}
+
+// Linux: present a plain Chrome User-Agent to SoundCloud instead of the default
+// Electron one (which carries `Electron/…` and the app-name token). On a cold
+// profile without a trusted DataDome cookie those tokens push the bot score over
+// the captcha threshold; a stock Chrome UA lets DataDome hand out a cookie
+// silently. Windows keeps its default UA (its warm profile already passes).
+if (process.platform === 'linux') {
+  app.userAgentFallback =
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+}
 
 // Custom scheme for serving local video wallpapers while webSecurity is on
 // (a file:// page/origin can't load arbitrary file:// resources). Must be
@@ -178,28 +202,108 @@ function createTray(): void {
   tray = new Tray(trayIcon)
   tray.setToolTip('SoundCloud')
 
-  tray.on('click', () => {
+  const toggleMini = () => {
     if (miniWindow && !miniWindow.isDestroyed()) {
       miniWindow.isVisible() ? miniWindow.hide() : miniWindow.show()
     } else {
       createMiniWindow()
     }
-  })
+  }
 
-  tray.on('right-click', () => {
-    const menu = Menu.buildFromTemplate([
-      {
-        label: 'Открыть приложение',
-        click: () => { mainWindow?.show(); mainWindow?.focus() }
-      },
-      { type: 'separator' },
-      {
-        label: 'Закрыть',
-        click: () => { isQuitting = true; app.quit() }
+  const buildMenu = () => Menu.buildFromTemplate([
+    { label: 'Открыть приложение', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+    { label: 'Мини-плеер', click: toggleMini },
+    { type: 'separator' },
+    { label: 'Закрыть', click: () => { isQuitting = true; app.quit() } },
+  ])
+
+  // Linux tray icons go through libappindicator/StatusNotifierItem, which does NOT
+  // emit 'click'/'right-click' and ignores popUpContextMenu — the only reliable
+  // interaction is a menu attached via setContextMenu (the tray host, e.g. Quickshell,
+  // pops it on click). Without this the tray is dead on Linux and the app can't be
+  // opened or quit from it. On Windows/macOS keep the original click/right-click UX.
+  if (process.platform === 'linux') {
+    tray.setContextMenu(buildMenu())
+  } else {
+    tray.on('click', toggleMini)
+    tray.on('right-click', () => { tray?.popUpContextMenu(buildMenu()) })
+  }
+}
+
+// ── MPRIS (Linux media controls / now-playing) ──────────────────────────────
+// Thin adapter over the existing player-state broadcast + player-command channel:
+// metadata is pulled from the same `player-state-update` payload that feeds the
+// mini window, and control events are forwarded to the main renderer via the same
+// `player-command` channel the mini player uses. Publishes one clean
+// `org.mpris.MediaPlayer2.soundcloud` source. Linux-only; no-ops elsewhere.
+interface MprisState {
+  currentTrack: { id: number | string; title: string; artwork_url?: string | null; user?: { username?: string } } | null
+  isPlaying: boolean
+  volume: number
+  progress: number
+  duration: number
+}
+
+function sendPlayerCommand(type: string, payload?: unknown): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('player-command', { type, payload })
+  }
+}
+
+function setupMpris(): void {
+  if (process.platform !== 'linux' || mprisPlayer) return
+  try {
+    mprisPlayer = Mpris({
+      name: 'soundcloud',
+      identity: 'SoundCloud',
+      supportedInterfaces: ['player'],
+    })
+    mprisPlayer.canControl = true
+    mprisPlayer.canPlay = true
+    mprisPlayer.canPause = true
+    mprisPlayer.canGoNext = true
+    mprisPlayer.canGoPrevious = true
+
+    // Map MPRIS control events onto the renderer's player-command actions.
+    mprisPlayer.on('play', () => sendPlayerCommand('play-pause', true))
+    mprisPlayer.on('pause', () => sendPlayerCommand('play-pause', false))
+    mprisPlayer.on('stop', () => sendPlayerCommand('play-pause', false))
+    mprisPlayer.on('playpause', () => {
+      const st = lastPlayerState as MprisState | null
+      sendPlayerCommand('play-pause', !st?.isPlaying)
+    })
+    mprisPlayer.on('next', () => sendPlayerCommand('next'))
+    mprisPlayer.on('previous', () => sendPlayerCommand('prev'))
+    mprisPlayer.on('volume', (v: unknown) => {
+      const vol = Math.max(0, Math.min(1, Number(v)))
+      if (!Number.isNaN(vol)) sendPlayerCommand('volume', vol)
+    })
+  } catch (e) {
+    console.error('[mpris] setup failed:', e)
+    mprisPlayer = null
+  }
+}
+
+function updateMpris(state: MprisState): void {
+  if (!mprisPlayer) return
+  try {
+    const t = state.currentTrack
+    mprisPlayer.playbackStatus = t ? (state.isPlaying ? 'Playing' : 'Paused') : 'Stopped'
+    if (typeof state.volume === 'number') mprisPlayer.volume = state.volume
+    if (t) {
+      const idStr = String(t.id).replace(/[^A-Za-z0-9_]/g, '_') || '0'
+      // progress/duration in the store are SECONDS; MPRIS wants microseconds.
+      mprisPlayer.metadata = {
+        'mpris:trackid': mprisPlayer.objectPath('track/' + idStr),
+        'mpris:length': Math.max(0, Math.round((state.duration || 0) * 1e6)),
+        'mpris:artUrl': t.artwork_url ? t.artwork_url.replace(/-large\./, '-t200x200.') : '',
+        'xesam:title': t.title || '',
+        'xesam:artist': [t.user?.username || ''],
       }
-    ])
-    tray?.popUpContextMenu(menu)
-  })
+    }
+  } catch (e) {
+    console.error('[mpris] update failed:', e)
+  }
 }
 
 // Get client_id silently by loading soundcloud.com in a hidden window
@@ -247,6 +351,82 @@ async function ensureScProxy(): Promise<BrowserWindow> {
   return scProxy
 }
 
+// Pull the DataDome captcha page URL out of a failed sc-write error message
+// (the 403 body looks like {"url":"https://geo.captcha-delivery.com/captcha/…"}).
+function extractCaptchaUrl(errMsg: string): string | null {
+  const m = errMsg.match(/https?:\/\/[^\s"'\\]*captcha-delivery\.com\/captcha\/[^\s"'\\]*/)
+  return m ? m[0] : null
+}
+
+// Solve the DataDome captcha by embedding it as an iframe INSIDE the scProxy page
+// (which is on the soundcloud.com origin). This replicates DataDome's real
+// integration: the captcha iframe posts its freshly-solved `datadome` cookie to
+// the parent, and because the parent origin IS soundcloud.com the message is
+// delivered — our injected handler writes the cookie via document.cookie in the
+// native context, so DataDome trusts THIS window and the retried write passes.
+// (Copying the cookie into a separate window/session does NOT work: DataDome ties
+// trust to the context that solved the challenge, not to the cookie value alone.)
+function solveDataDomeCaptcha(proxy: BrowserWindow, captchaUrl: string): Promise<void> {
+  if (captchaPromise) return captchaPromise
+  captchaPromise = new Promise<void>((resolve) => {
+    let settled = false
+    let poll: ReturnType<typeof setInterval> | null = null
+    const cleanupJs = '(function(){var f=document.getElementById("__ddFrame"); if(f) f.remove(); window.__ddSolved=false;})()'
+    const finish = () => {
+      if (settled) return
+      settled = true
+      if (poll) clearInterval(poll)
+      captchaPromise = null
+      proxy.webContents.executeJavaScript(cleanupJs).catch(() => {})
+      try { if (!proxy.isDestroyed()) proxy.hide() } catch { /* ignore */ }
+      resolve()
+    }
+
+    // Overlay the captcha as a full-window iframe on the soundcloud.com scProxy page
+    // and listen (as the soundcloud.com parent) for DataDome's solved-cookie message.
+    const inject = `(function(){
+      if (document.getElementById('__ddFrame')) return;
+      window.__ddSolved = false;
+      if (!window.__ddListener) {
+        window.__ddListener = true;
+        window.addEventListener('message', function(e){
+          try {
+            var d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+            if (d && d.cookie && String(d.cookie).indexOf('datadome=') !== -1) {
+              document.cookie = d.cookie;
+              window.__ddSolved = true;
+            }
+          } catch(_){}
+        });
+      }
+      var f = document.createElement('iframe');
+      f.id = '__ddFrame';
+      f.src = ${JSON.stringify(captchaUrl)};
+      f.setAttribute('style','position:fixed;inset:0;width:100vw;height:100vh;border:0;z-index:2147483647;background:#fff');
+      (document.body || document.documentElement).appendChild(f);
+    })();`
+
+    try {
+      proxy.show()
+      proxy.focus()
+      proxy.setTitle('Подтвердите, что вы не робот — SoundCloud')
+    } catch { /* ignore */ }
+    proxy.webContents.executeJavaScript(inject).catch((e) => console.error('[captcha] inject failed', e))
+
+    let waited = 0
+    poll = setInterval(async () => {
+      if (settled) return
+      waited += 500
+      try {
+        const solved = await proxy.webContents.executeJavaScript('window.__ddSolved === true')
+        if (solved) { setTimeout(finish, 400); return }
+      } catch { /* proxy mid-navigation */ }
+      if (waited >= 180000) finish() // give up after 3 min so the write can't hang forever
+    }, 500)
+  })
+  return captchaPromise
+}
+
 ipcMain.handle('sc-write', async (event, method: string, url: string, body: unknown, oauthToken: string) => {
   if (!isTrustedSender(event)) throw new Error('untrusted sender')
   assertScUrl(url)
@@ -273,37 +453,57 @@ ipcMain.handle('sc-write', async (event, method: string, url: string, body: unkn
       return text ? JSON.parse(text) : null;
     })()
   `
-  return proxy.webContents.executeJavaScript(code)
+  try {
+    return await proxy.webContents.executeJavaScript(code)
+  } catch (err) {
+    const msg = (err as Error)?.message ?? String(err)
+    const captchaUrl = extractCaptchaUrl(msg)
+    if (captchaUrl) {
+      // DataDome challenge: solve it in-context, then retry the write once.
+      await solveDataDomeCaptcha(proxy, captchaUrl)
+      return await proxy.webContents.executeJavaScript(code)
+    }
+    throw err
+  }
 })
 
 // ── Secure token storage (OS keychain via safeStorage) ──────────────────────
 // Keeps the OAuth token out of localStorage; encrypted at rest with DPAPI/keychain.
 const tokenFile = () => join(app.getPath('userData'), 'sc-token.bin')
+// Fallback store used when the OS keychain is unavailable (common on bare Linux
+// Wayland sessions with no keyring daemon). Base64 is obfuscation, NOT encryption
+// — but without it the token can't persist and every write 401s after relaunch.
+const tokenFileFallback = () => join(app.getPath('userData'), 'sc-token.b64')
 
 ipcMain.handle('secure-set-token', (event, token: string) => {
   if (!isTrustedSender(event)) return false
   try {
     if (!token) {
       if (existsSync(tokenFile())) unlinkSync(tokenFile())
+      if (existsSync(tokenFileFallback())) unlinkSync(tokenFileFallback())
       return true
     }
     if (safeStorage.isEncryptionAvailable()) {
       writeFileSync(tokenFile(), safeStorage.encryptString(token))
+      if (existsSync(tokenFileFallback())) unlinkSync(tokenFileFallback())
       return true
     }
-    // No OS keychain available — refuse to write the token to disk in the clear.
-    // It stays in memory for this session; the user re-authenticates next launch.
+    // No OS keychain — persist an obfuscated copy so the token survives relaunch.
+    writeFileSync(tokenFileFallback(), Buffer.from(token, 'utf8').toString('base64'), { mode: 0o600 })
     if (existsSync(tokenFile())) unlinkSync(tokenFile())
-    return false
+    return true
   } catch { return false }
 })
 
 ipcMain.handle('secure-get-token', (event) => {
   if (!isTrustedSender(event)) return ''
   try {
-    if (!existsSync(tokenFile())) return ''
-    const buf = readFileSync(tokenFile())
-    if (safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(buf)
+    if (existsSync(tokenFile()) && safeStorage.isEncryptionAvailable()) {
+      return safeStorage.decryptString(readFileSync(tokenFile()))
+    }
+    if (existsSync(tokenFileFallback())) {
+      return Buffer.from(readFileSync(tokenFileFallback()).toString('utf8'), 'base64').toString('utf8')
+    }
     return ''
   } catch { return '' }
 })
@@ -394,6 +594,7 @@ ipcMain.on('player-state-update', (_, state) => {
   if (miniWindow && !miniWindow.isDestroyed()) {
     miniWindow.webContents.send('player-state', state)
   }
+  updateMpris(state as MprisState)
 })
 
 // Control commands: mini window → main process → main renderer
@@ -502,6 +703,7 @@ app.whenReady().then(() => {
 
   createMainWindow()
   createTray()
+  setupMpris()
 
   // Companion overlay bridge: relay WS commands to the main renderer's player.
   startBridge((cmd) => {
