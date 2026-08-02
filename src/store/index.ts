@@ -320,11 +320,11 @@ export type SettingsPreset = { id: string; name: string; data: Record<string, un
 // main process (the UI does this after applySettingsPreset).
 export const SETTINGS_PRESET_KEYS = [
   'theme', 'accent', 'bgStyle', 'visualizerStyle', 'heroAnim',
-  'playerStyle', 'fsLayout', 'fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'lyricsFontScale',
+  'playerStyle', 'fsLayout', 'fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'lyricsFontScale', 'wallpaperBlur',
   'hiddenNav', 'startPage', 'lang',
   'perfPauseUnfocused', 'perfLowFps', 'perfNoBlur', 'perfNoHeroAnim', 'perfMiniOpaque', 'perfBigLists',
   'eq', 'eqEnabled', 'crossfade',
-  'closeToTray', 'mediaKeys', 'autoSkipDrm', 'launchAtStartup',
+  'closeToTray', 'mediaKeys', 'autoSkipDrm', 'launchAtStartup', 'datadomeBypass',
 ] as const
 
 // Stable snapshot of the preset keys from a state object (hiddenNav sorted so
@@ -351,7 +351,7 @@ export function validateSettingsPresetData(d: Record<string, unknown>): Record<s
     startPage: ['main', 'stream', 'releases', 'likes', 'playlists'],
     lang: ['ru', 'en'],
   }
-  const boolKeys = new Set(['fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'perfPauseUnfocused', 'perfLowFps', 'perfNoBlur', 'perfNoHeroAnim', 'perfMiniOpaque', 'perfBigLists', 'eqEnabled', 'closeToTray', 'mediaKeys', 'autoSkipDrm', 'launchAtStartup'])
+  const boolKeys = new Set(['fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'perfPauseUnfocused', 'perfLowFps', 'perfNoBlur', 'perfNoHeroAnim', 'perfMiniOpaque', 'perfBigLists', 'eqEnabled', 'closeToTray', 'mediaKeys', 'autoSkipDrm', 'launchAtStartup', 'datadomeBypass'])
   const out: Record<string, unknown> = {}
   for (const key of SETTINGS_PRESET_KEYS) {
     if (!(key in d)) continue
@@ -360,6 +360,7 @@ export function validateSettingsPresetData(d: Record<string, unknown>): Record<s
     if (key in ENUMS) { if (typeof val === 'string' && ENUMS[key].includes(val)) out[key] = val; continue }
     if (boolKeys.has(key)) { if (typeof val === 'boolean') out[key] = val; continue }
     if (key === 'lyricsFontScale') { if (typeof val === 'number' && isFinite(val)) out[key] = Math.max(0.7, Math.min(1.8, val)); continue }
+    if (key === 'wallpaperBlur') { if (typeof val === 'number' && isFinite(val)) out[key] = Math.max(0, Math.min(30, Math.round(val))); continue }
     if (key === 'crossfade') { if (typeof val === 'number' && isFinite(val)) out[key] = Math.max(0, Math.min(12, val)); continue }
     if (key === 'eq') { if (Array.isArray(val) && val.length === 5 && val.every(n => typeof n === 'number' && isFinite(n))) out.eq = (val as number[]).map(n => Math.max(-12, Math.min(12, Math.round(n)))); continue }
     if (key === 'hiddenNav') { if (Array.isArray(val) && val.every(v => typeof v === 'string')) out.hiddenNav = [...(val as string[])].sort(); continue }
@@ -383,6 +384,7 @@ interface SettingsState {
   fsBeatGlow: boolean      // beat-reactive glow on the artwork
   fsArtCrossfade: boolean  // crossfade artwork on track change
   lyricsFontScale: number  // lyrics font multiplier (1 = default)
+  wallpaperBlur: number    // custom wallpaper blur, px (0 = off)
   wallpaperPath: string
   hiddenNav: string[]      // sidebar nav ids hidden from the rail
   // ── Performance ──
@@ -406,6 +408,7 @@ interface SettingsState {
   mediaKeys: boolean       // keyboard playback shortcuts enabled
   launchAtStartup: boolean // start the app on Windows login
   autoSkipDrm: boolean     // automatically skip DRM-protected tracks
+  datadomeBypass: boolean  // auto-solve DataDome captcha on a 403 write (default off)
   setAccent: (a: AccentColor) => void
   setBgStyle: (b: BgStyle) => void
   setVisualizerStyle: (v: VisualizerStyle) => void
@@ -418,6 +421,7 @@ interface SettingsState {
   setFsBeatGlow: (v: boolean) => void
   setFsArtCrossfade: (v: boolean) => void
   setLyricsFontScale: (v: number) => void
+  setWallpaperBlur: (v: number) => void
   setWallpaperPath: (p: string) => void
   toggleNavHidden: (id: string) => void
   setPerf: (key: PerfKey, v: boolean) => void
@@ -443,6 +447,7 @@ interface SettingsState {
   setMediaKeys: (v: boolean) => void
   setLaunchAtStartup: (v: boolean) => void
   setAutoSkipDrm: (v: boolean) => void
+  setDatadomeBypass: (v: boolean) => void
   resetSettings: () => void
 }
 
@@ -461,6 +466,7 @@ const SETTINGS_DEFAULTS = {
   fsArtCrossfade: true,
   lyricsFontScale: 1,
   wallpaperPath: '',
+  wallpaperBlur: 0,
   hiddenNav: [] as string[],
   perfPauseUnfocused: false,
   perfLowFps: false,
@@ -482,6 +488,7 @@ const SETTINGS_DEFAULTS = {
   mediaKeys: true,
   launchAtStartup: false,
   autoSkipDrm: false,
+  datadomeBypass: false,
 }
 
 export const useSettings = create<SettingsState>()(
@@ -501,6 +508,7 @@ export const useSettings = create<SettingsState>()(
       setFsArtCrossfade: (fsArtCrossfade) => set({ fsArtCrossfade }),
       setLyricsFontScale: (lyricsFontScale) => set({ lyricsFontScale }),
       setWallpaperPath: (wallpaperPath) => set({ wallpaperPath }),
+      setWallpaperBlur: (wallpaperBlur) => set({ wallpaperBlur }),
       toggleNavHidden: (id) => set(s => ({
         hiddenNav: s.hiddenNav.includes(id) ? s.hiddenNav.filter(x => x !== id) : [...s.hiddenNav, id],
       })),
@@ -561,6 +569,7 @@ export const useSettings = create<SettingsState>()(
       setMediaKeys: (mediaKeys) => set({ mediaKeys }),
       setLaunchAtStartup: (launchAtStartup) => set({ launchAtStartup }),
       setAutoSkipDrm: (autoSkipDrm) => set({ autoSkipDrm }),
+      setDatadomeBypass: (datadomeBypass) => set({ datadomeBypass }),
       resetSettings: () => set({ ...SETTINGS_DEFAULTS }),
     }),
     {

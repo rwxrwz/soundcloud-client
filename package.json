@@ -1,11 +1,12 @@
 {
   "name": "soundcloud-player",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "description": "SoundCloud Desktop Player",
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build && electron-builder",
+    "build:all": "electron-vite build && electron-builder --linux AppImage --win portable",
     "preview": "electron-vite preview"
   },
   "keywords": [],

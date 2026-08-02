@@ -155,7 +155,7 @@ function ProfileTab({ onClose }: { onClose: () => void }) {
 }
 
 function AppearanceTab() {
-  const { accent, bgStyle, wallpaperPath, theme, setAccent, setBgStyle, setWallpaperPath, setTheme } = useSettings()
+  const { accent, bgStyle, wallpaperPath, theme, setAccent, setBgStyle, setWallpaperPath, setTheme, hiddenNav, toggleNavHidden } = useSettings()
   const { artRgb } = useUI()
   const t = useT()
   const artworkHex = `#${artRgb.map(v => v.toString(16).padStart(2, '0')).join('')}`
@@ -228,6 +228,21 @@ function AppearanceTab() {
           onPick={(p) => { setWallpaperPath(p); setBgStyle('wallpaper') }}
           onNone={() => setBgStyle('artwork')}
         />
+      </Collapsible>
+
+      <Collapsible title={t('sidebarTabs')}>
+        <div className="flex flex-col gap-0.5">
+          {NAV.map(item => {
+            const visible = !hiddenNav.includes(item.id)
+            const lastOne = visible && hiddenNav.length >= NAV.length - 1
+            return (
+              <div key={item.id} className="flex items-center justify-between py-1.5">
+                <span className="text-sm text-white/75">{t(item.key)}</span>
+                <Toggle active={visible} disabled={lastOne} onClick={() => toggleNavHidden(item.id)} />
+              </div>
+            )
+          })}
+        </div>
       </Collapsible>
     </>
   )
@@ -498,18 +513,20 @@ function SoundTab() {
 }
 
 function SystemTab() {
-  const { startPage, setStartPage, closeToTray, setCloseToTray, mediaKeys, setMediaKeys, launchAtStartup, setLaunchAtStartup, autoSkipDrm, setAutoSkipDrm, hiddenNav, toggleNavHidden, resetSettings } = useSettings()
+  const { startPage, setStartPage, closeToTray, setCloseToTray, mediaKeys, setMediaKeys, launchAtStartup, setLaunchAtStartup, autoSkipDrm, setAutoSkipDrm, datadomeBypass, setDatadomeBypass, resetSettings } = useSettings()
   const t = useT()
   const [confirmReset, setConfirmReset] = useState(false)
 
   const toggleTray = (v: boolean) => { setCloseToTray(v); window.electronAPI?.setCloseToTray?.(v) }
   const toggleLaunch = (v: boolean) => { setLaunchAtStartup(v); window.electronAPI?.setLoginItem?.(v) }
+  const toggleDatadome = (v: boolean) => { setDatadomeBypass(v); window.electronAPI?.setDatadomeBypass?.(v) }
 
   // Re-push system prefs to the main process after a bulk change (reset)
   const syncSystem = () => {
     const s = useSettings.getState()
     window.electronAPI?.setCloseToTray?.(s.closeToTray)
     window.electronAPI?.setLoginItem?.(s.launchAtStartup)
+    window.electronAPI?.setDatadomeBypass?.(s.datadomeBypass)
   }
 
   const doReset = () => {
@@ -560,23 +577,9 @@ function SystemTab() {
           <FsToggleRow label={t('mediaKeys')} active={mediaKeys} onClick={() => setMediaKeys(!mediaKeys)} />
           <FsToggleRow label={t('launchAtStartup')} active={launchAtStartup} onClick={() => toggleLaunch(!launchAtStartup)} />
           <FsToggleRow label={t('autoSkipDrm')} active={autoSkipDrm} onClick={() => setAutoSkipDrm(!autoSkipDrm)} />
+          <FsToggleRow label={t('datadomeBypass')} active={datadomeBypass} onClick={() => toggleDatadome(!datadomeBypass)} />
         </div>
       </Section>
-
-      <Collapsible title={t('sidebarTabs')}>
-        <div className="flex flex-col gap-0.5">
-          {NAV.map(item => {
-            const visible = !hiddenNav.includes(item.id)
-            const lastOne = visible && hiddenNav.length >= NAV.length - 1
-            return (
-              <div key={item.id} className="flex items-center justify-between py-1.5">
-                <span className="text-sm text-white/75">{t(item.key)}</span>
-                <Toggle active={visible} disabled={lastOne} onClick={() => toggleNavHidden(item.id)} />
-              </div>
-            )
-          })}
-        </div>
-      </Collapsible>
 
       <Collapsible title={t('catPerf')}>
         <PerfSection />
@@ -664,6 +667,7 @@ function SettingsPresetsSection() {
     const st = useSettings.getState()
     window.electronAPI?.setCloseToTray?.(st.closeToTray)
     window.electronAPI?.setLoginItem?.(st.launchAtStartup)
+    window.electronAPI?.setDatadomeBypass?.(st.datadomeBypass)
     showToast(t('settingsPresetApplied'), 'success')
   }
 
@@ -927,6 +931,7 @@ function WallpaperSection({ active, wallpaperPath, onPick, onNone }: {
   active: boolean; wallpaperPath: string; onPick: (p: string) => void; onNone: () => void
 }) {
   const t = useT()
+  const { wallpaperBlur, setWallpaperBlur } = useSettings()
   const [list, setList] = useState<{ name: string; path: string }[]>([])
   const [dir, setDir] = useState('')
   const load = () => { window.electronAPI?.listWallpapers?.().then(setList).catch(() => {}) }
@@ -954,6 +959,18 @@ function WallpaperSection({ active, wallpaperPath, onPick, onNone }: {
         {list.map(w => (
           <WpCard key={w.path} label={w.name} active={active && wallpaperPath === w.path} onClick={() => onPick(w.path)} />
         ))}
+      </div>
+
+      <div className="mt-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-white/80">{t('wallpaperBlur')}</span>
+          <span className="text-[11px] text-white/40 tabular-nums">{wallpaperBlur} px</span>
+        </div>
+        <input
+          type="range" min={0} max={30} step={1} value={wallpaperBlur}
+          onChange={e => setWallpaperBlur(Number(e.target.value))}
+          className="w-full" style={{ accentColor: 'var(--accent)' }}
+        />
       </div>
 
       {list.length === 0 && <p className="text-[11px] text-white/35 mt-2">{t('wallpapersEmpty')}</p>}

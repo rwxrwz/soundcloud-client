@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { useSettings, useUI, ACCENT_COLORS, AccentColor, HeroAnim, BgStyle, Theme, FsLayout } from '../store'
+import { useSettings, useUI, ACCENT_COLORS, AccentColor, HeroAnim, BgStyle, Theme, FsLayout, PlayerStyle } from '../store'
 import { useT } from '../i18n'
 
 export function QuickCustomize() {
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const close = () => { if (closing) return; setClosing(true); setTimeout(() => { setOpen(false); setClosing(false) }, 140) }
-  const { accent, setAccent, heroAnim, setHeroAnim, bgStyle, setBgStyle, theme, setTheme, wallpaperPath, setWallpaperPath, playerStyle, fsLayout, setFsLayout, fsShowLyrics, setFsShowLyrics, fsLiveBg, setFsLiveBg, fsBeatGlow, setFsBeatGlow, fsArtCrossfade, setFsArtCrossfade } = useSettings()
+  const { accent, setAccent, heroAnim, setHeroAnim, bgStyle, setBgStyle, theme, setTheme, wallpaperPath, setWallpaperPath, wallpaperBlur, setWallpaperBlur, playerStyle, setPlayerStyle, fsLayout, setFsLayout, fsShowLyrics, setFsShowLyrics, fsLiveBg, setFsLiveBg, fsBeatGlow, setFsBeatGlow, fsArtCrossfade, setFsArtCrossfade } = useSettings()
   const toggleLyrics = () => { const v = !fsShowLyrics; setFsShowLyrics(v); if (!v && fsLayout === 'stack') setFsLayout('side') }
   const { artRgb } = useUI()
   const t = useT()
@@ -30,6 +30,9 @@ export function QuickCustomize() {
   ]
   const layouts: [FsLayout, string][] = [
     ['side', t('fsSide')], ['stack', t('fsStack')], ['split', t('fsSplit')],
+  ]
+  const playerStyles: [PlayerStyle, string][] = [
+    ['default', t('psDefault')], ['fullscreen', t('psFullscreen')],
   ]
   const isFs = playerStyle === 'fullscreen'
 
@@ -63,6 +66,10 @@ export function QuickCustomize() {
 
             <Sec title={t('theme')}>
               <Chips items={themes} active={theme} onPick={setTheme} />
+            </Sec>
+
+            <Sec title={t('playerStyleLabel')}>
+              <Chips items={playerStyles} active={playerStyle} onPick={setPlayerStyle} />
             </Sec>
 
             {isFs && (
@@ -100,6 +107,15 @@ export function QuickCustomize() {
               <div className="flex items-center gap-2 mt-2">
                 <MiniBtn label={t('openFolder')} onClick={() => window.electronAPI?.openWallpapers?.()} />
                 <MiniBtn label={t('refreshList')} onClick={loadWalls} />
+              </div>
+              <div className="mt-2.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] text-white/50">{t('wallpaperBlur')}</span>
+                  <span className="text-[10px] text-white/35 tabular-nums">{wallpaperBlur} px</span>
+                </div>
+                <input type="range" min={0} max={30} step={1} value={wallpaperBlur}
+                  onChange={e => setWallpaperBlur(Number(e.target.value))}
+                  className="w-full" style={{ accentColor: 'var(--accent)' }} />
               </div>
             </Sec>
           </div>

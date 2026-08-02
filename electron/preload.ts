@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setCloseToTray: (enabled: boolean) => ipcRenderer.invoke('set-close-to-tray', enabled),
   setLoginItem: (enabled: boolean) => ipcRenderer.invoke('set-login-item', enabled),
   getLoginItem: () => ipcRenderer.invoke('get-login-item') as Promise<boolean>,
+  setDatadomeBypass: (enabled: boolean) => ipcRenderer.invoke('set-datadome-bypass', enabled),
 
   // Secure OAuth token storage (OS keychain via safeStorage)
   secureSetToken: (token: string) => ipcRenderer.invoke('secure-set-token', token),
@@ -68,4 +69,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   wallpapersDir: () => ipcRenderer.invoke('wallpapers-dir') as Promise<string>,
   openWallpapers: () => ipcRenderer.invoke('wallpapers-open'),
   listWallpapers: () => ipcRenderer.invoke('wallpapers-list') as Promise<{ name: string; path: string }[]>,
+
+  // Track downloads (userData/downloads or a "Save as" dialog)
+  downloadTrack: (mode: 'folder' | 'dialog', url: string, filename: string) =>
+    ipcRenderer.invoke('download-track', mode, url, filename) as Promise<string | null>,
+  openDownloads: () => ipcRenderer.invoke('downloads-open'),
 })

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useProfile } from './store'
+import { useProfile, useSettings } from './store'
 import { Login } from './pages/Login'
 import { Player } from './pages/Player'
 import { MiniPlayer } from './components/MiniPlayer'
@@ -36,6 +36,9 @@ function MainApp() {
           }
         }
       } catch { /* ignore */ }
+      // Push persisted system prefs that live in the main process on launch, so a
+      // saved value takes effect without re-toggling it (mirrors closeToTray/login).
+      try { window.electronAPI?.setDatadomeBypass?.(useSettings.getState().datadomeBypass) } catch { /* ignore */ }
       setBooted(true)
     })()
   }, [])

@@ -1,8 +1,13 @@
-import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, safeStorage, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, safeStorage, protocol, dialog } from 'electron'
 import { join, relative, isAbsolute } from 'path'
 import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync, readdirSync } from 'fs'
 import { startBridge, stopBridge, bridgeSetState, bridgeProgress, bridgeAudio, bridgeSpectrum, type BridgeState } from './bridge'
-import Mpris from 'mpris-service'
+// Type-only import: erased at build time so it never becomes a top-level require.
+// mpris-service (and its call-bind/dunder-proto dep cluster) is Linux-only and is
+// require()'d lazily inside setupMpris() under a platform guard — otherwise the
+// Windows bundle would require it on launch and die on the missing top-level
+// `call-bind-apply-helpers` (the afterPack fix only patches the Linux bundle).
+import type Mpris from 'mpris-service'
 
 const ICON_PATH = join(__dirname, '../../buildResources/icon_rounded.ico')
 
@@ -11,6 +16,7 @@ let miniWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 let closeToTray = true   // when false, closing the window quits the app
+let datadomeBypass = false // when true, auto-solve DataDome captcha on a 403 write
 let lastPlayerState: unknown = null
 // Hidden SC-context window — kept alive after auth so DataDome cookies stay valid
 let scProxy: BrowserWindow | null = null
@@ -253,7 +259,9 @@ function sendPlayerCommand(type: string, payload?: unknown): void {
 function setupMpris(): void {
   if (process.platform !== 'linux' || mprisPlayer) return
   try {
-    mprisPlayer = Mpris({
+    // Lazy require (Linux-only path): keeps mpris-service out of the Windows runtime.
+    const MprisCtor = require('mpris-service') as typeof Mpris
+    mprisPlayer = MprisCtor({
       name: 'soundcloud',
       identity: 'SoundCloud',
       supportedInterfaces: ['player'],
@@ -458,8 +466,9 @@ ipcMain.handle('sc-write', async (event, method: string, url: string, body: unkn
   } catch (err) {
     const msg = (err as Error)?.message ?? String(err)
     const captchaUrl = extractCaptchaUrl(msg)
-    if (captchaUrl) {
+    if (captchaUrl && datadomeBypass) {
       // DataDome challenge: solve it in-context, then retry the write once.
+      // Only when the user enabled the captcha-bypass toggle (default off).
       await solveDataDomeCaptcha(proxy, captchaUrl)
       return await proxy.webContents.executeJavaScript(code)
     }
@@ -509,7 +518,8 @@ ipcMain.handle('secure-get-token', (event) => {
 })
 
 // ── Video wallpapers ────────────────────────────────────────────────────────
-// Users drop .mp4/.webm files into userData/wallpapers; we scan + list them.
+// Users drop videos (.mp4/.webm) or images (.jpg/.png/.webp/.gif/.avif) into
+// userData/wallpapers; we scan + list them. The renderer picks video vs image by ext.
 const wallpapersDir = () => {
   const dir = join(app.getPath('userData'), 'wallpapers')
   try { mkdirSync(dir, { recursive: true }) } catch { /* ignore */ }
@@ -520,9 +530,37 @@ ipcMain.handle('wallpapers-open', () => shell.openPath(wallpapersDir()))
 ipcMain.handle('wallpapers-list', () => {
   try {
     return readdirSync(wallpapersDir())
-      .filter(f => /\.(mp4|webm)$/i.test(f))
+      .filter(f => /\.(mp4|webm|jpg|jpeg|png|webp|gif|avif)$/i.test(f))
       .map(f => ({ name: f.replace(/\.[^.]+$/, ''), path: join(wallpapersDir(), f) }))
   } catch { return [] }
+})
+
+// ── Track downloads ─────────────────────────────────────────────────────────
+// Saved MP3s live next to the wallpapers, in userData/downloads. The renderer
+// resolves the (signed) progressive stream URL and hands it here; main fetches
+// it (no CORS) and writes to disk. Returns the saved path, or null if cancelled.
+const downloadsDir = () => {
+  const dir = join(app.getPath('userData'), 'downloads')
+  try { mkdirSync(dir, { recursive: true }) } catch { /* ignore */ }
+  return dir
+}
+ipcMain.handle('downloads-open', () => shell.openPath(downloadsDir()))
+ipcMain.handle('download-track', async (event, mode: 'folder' | 'dialog', url: string, filename: string) => {
+  if (!isTrustedSender(event)) throw new Error('untrusted sender')
+  let dest = join(downloadsDir(), filename)
+  if (mode === 'dialog') {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow ?? undefined
+    const r = await dialog.showSaveDialog(win!, {
+      defaultPath: dest,
+      filters: [{ name: 'Audio', extensions: ['mp3'] }],
+    })
+    if (r.canceled || !r.filePath) return null
+    dest = r.filePath
+  }
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('HTTP ' + res.status)
+  writeFileSync(dest, Buffer.from(await res.arrayBuffer()))
+  return dest
 })
 
 // ── App version / GitHub releases (update check) ────────────────────────────
@@ -575,6 +613,9 @@ ipcMain.handle('window-close', () => mainWindow?.close())
 
 // System: close-button behaviour (hide to tray vs quit)
 ipcMain.handle('set-close-to-tray', (_, enabled: boolean) => { closeToTray = !!enabled })
+
+// System: auto-solve DataDome captcha on a 403 write (default off)
+ipcMain.handle('set-datadome-bypass', (_, enabled: boolean) => { datadomeBypass = !!enabled })
 
 // System: launch the app on Windows login.
 // This is a "portable" build: at runtime process.execPath points at the temp

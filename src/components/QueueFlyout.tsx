@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { usePlayer, useUI, useAccentHex } from '../store'
+import { usePlayer, useUI, useAccentHex, useLyrics } from '../store'
 import { sc } from '../services/soundcloud'
 import { useT } from '../i18n'
 
@@ -10,9 +10,10 @@ export function QueueFlyout() {
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const close = () => { if (closing) return; setClosing(true); setTimeout(() => { setOpen(false); setClosing(false) }, 140) }
-  const { queue, queueIndex, setTrack } = usePlayer()
+  const { queue, queueIndex, setTrack, isPlaying } = usePlayer()
   const { setContextMenu } = useUI()
   const accentHex = useAccentHex()
+  const lyricsAvail = useLyrics(s => s.available)
   const t = useT()
   const activeRef = useRef<HTMLButtonElement>(null)
 
@@ -71,10 +72,19 @@ export function QueueFlyout() {
                     {art && <img src={art} alt="" className="w-full h-full object-cover" />}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium truncate" style={{ color: active ? '#fff' : 'rgba(255,255,255,0.85)' }}>{track.title}</p>
+                    <p className="text-xs font-medium truncate flex items-center gap-1.5" style={{ color: active ? '#fff' : 'rgba(255,255,255,0.85)' }}>
+                      {lyricsAvail[track.id] && (
+                        <span className="shrink-0 inline-flex items-center justify-center text-[9px] font-bold rounded"
+                          title="Lyrics"
+                          style={{ width: 14, height: 14, background: 'rgba(255,255,255,0.18)', color: 'rgba(255,255,255,0.85)' }}>
+                          L
+                        </span>
+                      )}
+                      <span className="truncate">{track.title}</span>
+                    </p>
                     <p className="text-[10px] text-white/40 truncate">{track.user?.username}</p>
                   </div>
-                  {active && <PlayingBars color={accentHex} />}
+                  {active && <PlayingBars color={accentHex} playing={isPlaying} />}
                 </button>
               )
             })}
@@ -108,14 +118,17 @@ function QueueIcon() {
   )
 }
 
-function PlayingBars({ color }: { color: string }) {
+function PlayingBars({ color, playing }: { color: string; playing: boolean }) {
   return (
     <span className="flex items-end gap-[2px] shrink-0 h-3.5" aria-hidden>
       {[0, 1, 2].map(i => (
         <span key={i} style={{
-          width: 2, height: '100%', background: color, borderRadius: 1,
+          width: playing ? 2 : 3, height: playing ? '100%' : 3, background: color,
+          borderRadius: playing ? 1 : '50%',
           transformOrigin: 'bottom',
-          animation: `eq-bar 0.9s ease-in-out ${i * 0.18}s infinite`,
+          animation: playing ? `eq-bar 0.9s ease-in-out ${i * 0.18}s infinite` : 'none',
+          opacity: playing ? 1 : 0.6,
+          transition: 'height 0.2s ease, width 0.2s ease, border-radius 0.2s ease, opacity 0.2s ease',
         }} />
       ))}
     </span>

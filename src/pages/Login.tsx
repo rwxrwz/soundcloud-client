@@ -31,6 +31,7 @@ declare global {
       setCloseToTray: (enabled: boolean) => Promise<void>
       setLoginItem: (enabled: boolean) => Promise<void>
       getLoginItem: () => Promise<boolean>
+      setDatadomeBypass: (enabled: boolean) => Promise<void>
       secureSetToken: (token: string) => Promise<boolean>
       secureGetToken: () => Promise<string>
       getAppVersion: () => Promise<string>
@@ -38,6 +39,8 @@ declare global {
       wallpapersDir: () => Promise<string>
       openWallpapers: () => Promise<void>
       listWallpapers: () => Promise<{ name: string; path: string }[]>
+      downloadTrack: (mode: 'folder' | 'dialog', url: string, filename: string) => Promise<string | null>
+      openDownloads: () => Promise<void>
     }
   }
 }

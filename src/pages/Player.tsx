@@ -38,7 +38,7 @@ import { QueueFlyout } from '../components/QueueFlyout'
 export function Player() {
   const { clientId, oauthToken, user } = useProfile()
   const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, selectedAlbum, showQueue, showSettings, setShowSettings, page } = useUI()
-  const { accent, bgStyle, wallpaperPath, theme, playerStyle, fsLiveBg, perfNoBlur, perfNoHeroAnim, perfMiniOpaque } = useSettings()
+  const { accent, bgStyle, wallpaperPath, wallpaperBlur, theme, playerStyle, fsLiveBg, perfNoBlur, perfNoHeroAnim, perfMiniOpaque } = useSettings()
   const fsHome = playerStyle === 'fullscreen' && page === 'main'
   // A browsing overlay is open → the bottom island narrows and floats above it.
   const overlayOpen = !!(showTrackPage || artistPageUser || selectedAlbum)
@@ -191,15 +191,24 @@ export function Player() {
       className={`h-screen flex flex-col relative${bgStyle === 'aurora' && !livingBgActive ? ' aurora-bg' : ''}`}
       style={{ background: getBg(), transition: bgStyle === 'aurora' ? undefined : 'background 1.2s ease' }}
     >
-      {/* Video wallpaper background (behind everything) */}
+      {/* Custom wallpaper background (behind everything) - video or image by ext */}
       {bgStyle === 'wallpaper' && wallpaperPath && (
         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 0 }}>
-          <video
-            key={wallpaperPath}
-            src={`scwall://media/${encodeURIComponent(wallpaperPath.split(/[\\/]/).pop() || '')}`}
-            autoPlay loop muted playsInline
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
+          {/\.(mp4|webm)$/i.test(wallpaperPath) ? (
+            <video
+              key={wallpaperPath}
+              src={`scwall://media/${encodeURIComponent(wallpaperPath.split(/[\\/]/).pop() || '')}`}
+              autoPlay loop muted playsInline
+              style={{ width: '100%', height: '100%', objectFit: 'cover', filter: wallpaperBlur ? `blur(${wallpaperBlur}px)` : undefined, transform: wallpaperBlur ? 'scale(1.08)' : undefined }}
+            />
+          ) : (
+            <img
+              key={wallpaperPath}
+              src={`scwall://media/${encodeURIComponent(wallpaperPath.split(/[\\/]/).pop() || '')}`}
+              alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover', filter: wallpaperBlur ? `blur(${wallpaperBlur}px)` : undefined, transform: wallpaperBlur ? 'scale(1.08)' : undefined }}
+            />
+          )}
           <div className="absolute inset-0" style={{ background: 'rgba(8,8,12,0.5)' }} />
         </div>
       )}

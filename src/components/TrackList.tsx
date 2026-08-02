@@ -13,6 +13,10 @@ import { encodePlaylist } from '../services/playlistShare'
 import { SegmentedTabs } from './SegmentedTabs'
 import { useT } from '../i18n'
 
+// Remembers each tab's scroll position so switching tabs (and coming back) doesn't
+// jump to the top. Module-level so it survives the per-page remount of the list DOM.
+const scrollMemory = new Map<string, number>()
+
 export function TrackList() {
   const { likes, stream, playlists, likedPlaylists, setLikedPlaylists, releases, setReleases, setPlaylists, user, localPlaylists, removeLocalPlaylist } = useProfile()
   const { page, selectedPlaylist, searchQuery, setSearch, setSelectedPlaylist, backFromPlaylist, trackOrder, setTrackOrder } = useUI()
@@ -31,8 +35,44 @@ export function TrackList() {
   const perfBigLists = useSettings(s => s.perfBigLists)
   const filterInputRef = useRef<HTMLInputElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
+  const gridScrollRef = useRef<HTMLDivElement>(null)
   const t = useT()
   const markLyrics = useLyrics(s => s.mark)
+
+  // Per-tab scroll memory: save on scroll, restore on return. Keyed by view
+  // (open playlist keyed by its id). Restore waits for the virtualized list to
+  // grow tall enough before setting scrollTop, else the browser clamps it.
+  const scrollKey = page === 'playlist-detail' ? `pl:${selectedPlaylist?.id ?? ''}` : page
+  const saveScroll = (e: React.UIEvent<HTMLDivElement>) => { scrollMemory.set(scrollKey, e.currentTarget.scrollTop) }
+  useLayoutEffect(() => {
+    const getEl = () => (page === 'playlists' ? gridScrollRef.current : listScrollRef.current)
+    const el = getEl()
+    if (!el) return
+    const target = scrollMemory.get(scrollKey) ?? 0
+    if (target <= 0) return
+    // Try to restore synchronously, before the first paint. If the content is
+    // already tall enough (non-virtual grid, or a fast return) it sticks and there
+    // is no flash at all.
+    el.scrollTop = target
+    if (el.scrollTop >= target - 1) return
+    // Virtualized list isn't tall yet (row height still being measured). Hide it so
+    // the top doesn't flash, poll until it grows, then restore and reveal.
+    el.style.visibility = 'hidden'
+    let raf = 0, tries = 0
+    const restore = () => {
+      const e = getEl()
+      if (!e) return
+      if (e.scrollHeight - e.clientHeight >= target || tries > 30) {
+        e.scrollTop = target
+        e.style.visibility = ''
+        return
+      }
+      tries++
+      raf = requestAnimationFrame(restore)
+    }
+    raf = requestAnimationFrame(restore)
+    return () => { cancelAnimationFrame(raf); const e = getEl(); if (e) e.style.visibility = '' }
+  }, [scrollKey])
 
   // Animate the playlist search field closed before unmounting it
   const closeSearch = () => {
@@ -276,7 +316,7 @@ export function TrackList() {
             onImported={pl => setSelectedPlaylist(pl)}
           />
         )}
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
+        <div ref={gridScrollRef} onScroll={saveScroll} className="flex-1 overflow-y-auto px-4 pb-4">
           {localPlaylists.length + playlists.length + likedPlaylists.length === 0 ? (
             <Empty text={t('noPlaylistsYet')} />
           ) : (
@@ -533,7 +573,7 @@ export function TrackList() {
       )}
 
       {/* List */}
-      <div ref={listScrollRef} className="flex-1 overflow-y-auto px-3 pb-3">
+      <div ref={listScrollRef} onScroll={saveScroll} className="flex-1 overflow-y-auto px-3 pb-3">
         {page === 'search' ? (
           <SearchResults />
         ) : (page === 'releases' && loadingReleases && releases.length === 0) ? (
