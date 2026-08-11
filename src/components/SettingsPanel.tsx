@@ -155,12 +155,15 @@ function ProfileTab({ onClose }: { onClose: () => void }) {
 }
 
 function AppearanceTab() {
-  const { accent, bgStyle, wallpaperPath, theme, setAccent, setBgStyle, setWallpaperPath, setTheme, hiddenNav, toggleNavHidden } = useSettings()
+  const { accent, bgStyle, wallpaperPath, theme, transparencyLevel, setTransparencyLevel, setAccent, setBgStyle, setWallpaperPath, setTheme, hiddenNav, toggleNavHidden } = useSettings()
   const { artRgb } = useUI()
   const t = useT()
   const artworkHex = `#${artRgb.map(v => v.toString(16).padStart(2, '0')).join('')}`
+  const [launchedTransparent, setLaunchedTransparent] = useState(false)
+  useEffect(() => { window.electronAPI?.getWindowTransparent?.().then(setLaunchedTransparent).catch(() => {}) }, [])
+  const restartNeeded = theme === 'transparent' && !launchedTransparent
 
-  const themeLabel: Record<Theme, string> = { default: t('themeDefault'), glass: t('themeGlass'), minimal: t('themeMinimal') }
+  const themeLabel: Record<Theme, string> = { default: t('themeDefault'), glass: t('themeGlass'), minimal: t('themeMinimal'), transparent: t('themeTransparent') }
   const bgLabel: Record<string, string> = { artwork: t('bgDynamic'), accent: t('bgAccent'), aurora: t('bgAurora'), midnight: t('bgMidnight'), dark: t('bgDark'), wallpaper: t('videoWallpapers') }
   const accentDotHex = accent === 'artwork' ? artworkHex : (ACCENT_COLORS[accent] ?? artworkHex)
   const wpActive = bgStyle === 'wallpaper' && !!wallpaperPath
@@ -174,14 +177,37 @@ function AppearanceTab() {
             ['default', t('themeDefault'), t('themeDefaultSub')],
             ['glass',   t('themeGlass'),   t('themeGlassSub')],
             ['minimal', t('themeMinimal'), t('themeMinimalSub')],
+            ['transparent', t('themeTransparent'), t('themeTransparentSub')],
           ] as [Theme, string, string][]).map(([val, label, sub]) => (
             <ThemeCard key={val} theme={val} active={theme === val} label={label} sub={sub} onClick={() => setTheme(val)} />
           ))}
         </div>
+        {theme === 'transparent' && (
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-white/80">{t('transparency')}</span>
+              <span className="text-[11px] text-white/40 tabular-nums">{transparencyLevel}%</span>
+            </div>
+            <input
+              type="range" min={5} max={95} step={1} value={transparencyLevel}
+              onChange={e => setTransparencyLevel(Number(e.target.value))}
+              className="w-full" style={{ accentColor: 'var(--accent)' }}
+            />
+          </div>
+        )}
+        {restartNeeded && (
+          <div className="mt-3 flex items-center justify-between gap-3 px-3 py-2 rounded-lg"
+            style={{ background: 'rgba(var(--accent-rgb),0.1)', border: '1px solid rgba(var(--accent-rgb),0.25)' }}>
+            <span className="text-xs text-white/70">{t('restartNeeded')}</span>
+            <button onClick={() => window.electronAPI?.restartApp?.()}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105 active:scale-95 shrink-0"
+              style={{ background: 'var(--accent)', color: '#fff' }}>{t('restartNow')}</button>
+          </div>
+        )}
       </Collapsible>
 
       <Collapsible title={t('accentColor')} preview={<span className="w-3.5 h-3.5 rounded-full inline-block shrink-0" style={{ background: accentDotHex, border: '1px solid rgba(255,255,255,0.2)' }} />}>
-        <div className="flex flex-wrap gap-2.5">
+        <div className="flex flex-wrap gap-2.5 px-2 py-2">
           {(Object.entries(ACCENT_COLORS) as [AccentColor, string][]).map(([key, hex]) => (
             <button
               key={key}
@@ -190,7 +216,7 @@ function AppearanceTab() {
               style={{
                 background: hex,
                 transform: accent === key ? 'scale(1.18)' : 'scale(1)',
-                boxShadow: accent === key ? `0 0 12px 2px ${hex}66` : undefined,
+                boxShadow: accent === key ? `0 0 8px 1px ${hex}66` : undefined,
                 border: key === 'white' ? '1px solid rgba(255,255,255,0.2)' : undefined,
               }}
               title={key}
@@ -207,28 +233,32 @@ function AppearanceTab() {
         {accent === 'artwork' && <p className="text-[10px] text-white/30 mt-2 leading-tight">{t('artworkChanges')}</p>}
       </Collapsible>
 
-      <Collapsible title={t('background')} preview={<PreviewText>{bgLabel[bgStyle] ?? bgStyle}</PreviewText>}>
-        <div className="space-y-1.5">
-          {([
-            ['artwork', t('bgDynamic'),  t('bgDynamicSub')],
-            ['accent',  t('bgAccent'),   t('bgAccentSub')],
-            ['aurora',  t('bgAurora'),   t('bgAuroraSub')],
-            ['midnight',t('bgMidnight'), t('bgMidnightSub')],
-            ['dark',    t('bgDark'),     t('bgDarkSub')],
-          ] as [BgStyle, string, string][]).map(([val, label, sub]) => (
-            <RadioBtn key={val} active={bgStyle === val} onClick={() => setBgStyle(val)} label={label} sub={sub} />
-          ))}
-        </div>
-      </Collapsible>
+      {theme !== 'transparent' && (
+        <Collapsible title={t('background')} preview={<PreviewText>{bgLabel[bgStyle] ?? bgStyle}</PreviewText>}>
+          <div className="space-y-1.5">
+            {([
+              ['artwork', t('bgDynamic'),  t('bgDynamicSub')],
+              ['accent',  t('bgAccent'),   t('bgAccentSub')],
+              ['aurora',  t('bgAurora'),   t('bgAuroraSub')],
+              ['midnight',t('bgMidnight'), t('bgMidnightSub')],
+              ['dark',    t('bgDark'),     t('bgDarkSub')],
+            ] as [BgStyle, string, string][]).map(([val, label, sub]) => (
+              <RadioBtn key={val} active={bgStyle === val} onClick={() => setBgStyle(val)} label={label} sub={sub} />
+            ))}
+          </div>
+        </Collapsible>
+      )}
 
-      <Collapsible title={t('videoWallpapers')} preview={<PreviewText>{wpName}</PreviewText>}>
-        <WallpaperSection
-          active={bgStyle === 'wallpaper'}
-          wallpaperPath={wallpaperPath}
-          onPick={(p) => { setWallpaperPath(p); setBgStyle('wallpaper') }}
-          onNone={() => setBgStyle('artwork')}
-        />
-      </Collapsible>
+      {theme !== 'transparent' && (
+        <Collapsible title={t('videoWallpapers')} preview={<PreviewText>{wpName}</PreviewText>}>
+          <WallpaperSection
+            active={bgStyle === 'wallpaper'}
+            wallpaperPath={wallpaperPath}
+            onPick={(p) => { setWallpaperPath(p); setBgStyle('wallpaper') }}
+            onNone={() => setBgStyle('artwork')}
+          />
+        </Collapsible>
+      )}
 
       <Collapsible title={t('sidebarTabs')}>
         <div className="flex flex-col gap-0.5">
@@ -249,12 +279,12 @@ function AppearanceTab() {
 }
 
 function PlayerTab() {
-  const { bgStyle, visualizerStyle, heroAnim, playerStyle, fsLayout, fsShowLyrics, fsLiveBg, fsBeatGlow, fsArtCrossfade, lyricsFontScale, setVisualizerStyle, setHeroAnim, setPlayerStyle, setFsLayout, setFsShowLyrics, setFsLiveBg, setFsBeatGlow, setFsArtCrossfade, setLyricsFontScale } = useSettings()
+  const { theme, bgStyle, visualizerStyle, heroAnim, playerStyle, fsLayout, fsShowLyrics, fsLiveBg, fsBeatGlow, fsArtCrossfade, lyricsFontScale, setVisualizerStyle, setHeroAnim, setPlayerStyle, setFsLayout, setFsShowLyrics, setFsLiveBg, setFsBeatGlow, setFsArtCrossfade, setLyricsFontScale } = useSettings()
   const toggleLyrics = () => { const v = !fsShowLyrics; setFsShowLyrics(v); if (!v && fsLayout === 'stack') setFsLayout('side') }
   const t = useT()
   const psLabel: Record<PlayerStyle, string> = { default: t('psDefault'), fullscreen: t('psFullscreen') }
   const vizLabel: Record<VisualizerStyle, string> = { bars: t('vizBars'), wave: t('vizWave'), mirror: t('vizMirror') }
-  const animLabel: Record<HeroAnim, string> = { wave: t('animWave'), threads: t('animThreads'), silk: t('animSilk'), mist: t('animMist'), weave: t('animWeave'), spectrum: t('animSpectrum') }
+  const animLabel: Record<HeroAnim, string> = { wave: t('animWave'), threads: t('animThreads'), silk: t('animSilk'), mist: t('animMist'), weave: t('animWeave'), spectrum: t('animSpectrum'), none: t('animNone') }
   return (
     <>
       <Collapsible title={t('playerStyleLabel')} preview={<PreviewText>{psLabel[playerStyle]}</PreviewText>}>
@@ -283,7 +313,7 @@ function PlayerTab() {
             ))}
 
             <div className="pt-1 space-y-2.5">
-              <FsToggleRow label={t('fsLiveBg')} active={fsLiveBg && bgStyle !== 'wallpaper'} disabled={bgStyle === 'wallpaper'} onClick={() => setFsLiveBg(!fsLiveBg)} />
+              {theme !== 'transparent' && <FsToggleRow label={t('fsLiveBg')} active={fsLiveBg && bgStyle !== 'wallpaper'} disabled={bgStyle === 'wallpaper'} onClick={() => setFsLiveBg(!fsLiveBg)} />}
               <FsToggleRow label={t('fsBeatGlow')} active={fsBeatGlow} onClick={() => setFsBeatGlow(!fsBeatGlow)} />
               <FsToggleRow label={t('fsCrossfade')} active={fsArtCrossfade} onClick={() => setFsArtCrossfade(!fsArtCrossfade)} />
             </div>
@@ -318,8 +348,8 @@ function PlayerTab() {
         </div>
       </Collapsible>
 
-      {/* Home animation only matters in the default player style */}
-      {playerStyle !== 'fullscreen' && (
+      {/* Home animation only matters in the default player style, and not on transparent */}
+      {playerStyle !== 'fullscreen' && theme !== 'transparent' && (
       <Collapsible title={t('heroAnimation')} preview={<PreviewText>{animLabel[heroAnim]}</PreviewText>}>
         <div className="space-y-1.5">
           {([
@@ -329,6 +359,7 @@ function PlayerTab() {
             ['mist',     t('animMist'),     t('animMistSub')],
             ['weave',    t('animWeave'),    t('animWeaveSub')],
             ['spectrum', t('animSpectrum'), t('animSpectrumSub')],
+            ['none',     t('animNone'),     t('animNoneSub')],
           ] as [HeroAnim, string, string][]).map(([val, label, sub]) => (
             <RadioBtn key={val} active={heroAnim === val} onClick={() => setHeroAnim(val)} label={label} sub={sub} />
           ))}
@@ -519,6 +550,8 @@ function SystemTab() {
 
   const toggleTray = (v: boolean) => { setCloseToTray(v); window.electronAPI?.setCloseToTray?.(v) }
   const toggleLaunch = (v: boolean) => { setLaunchAtStartup(v); window.electronAPI?.setLoginItem?.(v) }
+  // Autostart is a Windows-only feature (portable-exe login item); disable elsewhere.
+  const isWindows = navigator.userAgent.includes('Windows')
   const toggleDatadome = (v: boolean) => { setDatadomeBypass(v); window.electronAPI?.setDatadomeBypass?.(v) }
 
   // Re-push system prefs to the main process after a bulk change (reset)
@@ -575,7 +608,10 @@ function SystemTab() {
         <div className="space-y-2.5">
           <FsToggleRow label={t('closeToTray')} active={closeToTray} onClick={() => toggleTray(!closeToTray)} />
           <FsToggleRow label={t('mediaKeys')} active={mediaKeys} onClick={() => setMediaKeys(!mediaKeys)} />
-          <FsToggleRow label={t('launchAtStartup')} active={launchAtStartup} onClick={() => toggleLaunch(!launchAtStartup)} />
+          <div>
+            <FsToggleRow label={t('launchAtStartup')} active={isWindows && launchAtStartup} disabled={!isWindows} onClick={() => toggleLaunch(!launchAtStartup)} />
+            {!isWindows && <p className="text-[10px] text-white/30 mt-0.5">{t('launchAtStartupWin')}</p>}
+          </div>
           <FsToggleRow label={t('autoSkipDrm')} active={autoSkipDrm} onClick={() => setAutoSkipDrm(!autoSkipDrm)} />
           <FsToggleRow label={t('datadomeBypass')} active={datadomeBypass} onClick={() => toggleDatadome(!datadomeBypass)} />
         </div>
@@ -853,7 +889,7 @@ function DynamicSwatch({ hex, active, onClick, title }: { hex: string; active: b
       style={{
         background: hex,
         transform: active ? 'scale(1.18)' : 'scale(1)',
-        boxShadow: active ? `0 0 14px 3px ${hex}88` : undefined,
+        boxShadow: active ? `0 0 8px 2px ${hex}88` : undefined,
         outline: !active ? '2px dashed rgba(255,255,255,0.28)' : 'none',
         outlineOffset: '2px',
       }}
@@ -877,6 +913,7 @@ function ThemeCard({ theme, active, label, sub, onClick }: { theme: Theme; activ
     default: { row: {}, tile: { background: 'linear-gradient(135deg,#3a3550,#262233)', border: '0.5px solid rgba(255,255,255,0.07)', borderRadius: 11 }, play: { background: 'var(--accent)', borderRadius: '50%', boxShadow: undefined as string | undefined }, playIcon: '#1a1626' },
     glass:   { row: { background: 'rgba(255,255,255,0.08)', border: '0.5px solid rgba(255,255,255,0.18)', borderRadius: 12, padding: 6 }, tile: { background: 'rgba(var(--accent-rgb),0.25)', border: '0.5px solid rgba(255,255,255,0.25)', borderRadius: 12 }, play: { background: 'rgba(var(--accent-rgb),0.5)', border: '0.5px solid rgba(255,255,255,0.4)', borderRadius: '50%', boxShadow: undefined }, playIcon: '#fff' },
     minimal: { row: {}, tile: { background: '#1b1b22', border: '0.5px solid rgba(255,255,255,0.1)', borderRadius: 4 }, play: { background: 'transparent', border: '1px solid rgba(var(--accent-rgb),0.7)', borderRadius: 4, boxShadow: undefined }, playIcon: 'var(--accent)' },
+    transparent: { row: { background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: 12, padding: 6, backdropFilter: 'blur(6px)' }, tile: { background: 'rgba(255,255,255,0.12)', border: '0.5px solid rgba(255,255,255,0.32)', borderRadius: 11 }, play: { background: 'rgba(var(--accent-rgb),0.6)', border: '0.5px solid rgba(255,255,255,0.5)', borderRadius: '50%', boxShadow: undefined }, playIcon: '#fff' },
   }[theme]
 
   return (

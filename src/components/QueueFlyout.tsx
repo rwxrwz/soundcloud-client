@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { usePlayer, useUI, useAccentHex, useLyrics } from '../store'
+import { usePlayer, useUI, useAccentHex, useLyrics, useSettings } from '../store'
 import { sc } from '../services/soundcloud'
 import { useT } from '../i18n'
 
@@ -14,6 +14,7 @@ export function QueueFlyout() {
   const { setContextMenu } = useUI()
   const accentHex = useAccentHex()
   const lyricsAvail = useLyrics(s => s.available)
+  const theme = useSettings(s => s.theme)
   const t = useT()
   const activeRef = useRef<HTMLButtonElement>(null)
 
@@ -97,9 +98,10 @@ export function QueueFlyout() {
         title={t('queue')}
         className="w-11 h-11 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 hover:scale-105"
         style={{
-          background: open ? 'var(--accent)' : 'rgba(20,20,26,0.9)',
+          background: open ? 'var(--accent)' : (theme === 'transparent' ? 'rgba(20,20,26,0.35)' : 'rgba(20,20,26,0.9)'),
+          backdropFilter: theme === 'transparent' && !open ? 'blur(12px)' : undefined,
           border: '1px solid rgba(255,255,255,0.14)',
-          boxShadow: '0 6px 22px rgba(0,0,0,0.45)',
+          boxShadow: theme === 'transparent' && !open ? '0 6px 22px rgba(0,0,0,0.25)' : '0 6px 22px rgba(0,0,0,0.45)',
           color: open ? '#fff' : 'rgba(255,255,255,0.85)',
         }}
       >

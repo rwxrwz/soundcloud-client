@@ -6,11 +6,14 @@ export function QuickCustomize() {
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const close = () => { if (closing) return; setClosing(true); setTimeout(() => { setOpen(false); setClosing(false) }, 140) }
-  const { accent, setAccent, heroAnim, setHeroAnim, bgStyle, setBgStyle, theme, setTheme, wallpaperPath, setWallpaperPath, wallpaperBlur, setWallpaperBlur, playerStyle, setPlayerStyle, fsLayout, setFsLayout, fsShowLyrics, setFsShowLyrics, fsLiveBg, setFsLiveBg, fsBeatGlow, setFsBeatGlow, fsArtCrossfade, setFsArtCrossfade } = useSettings()
+  const { accent, setAccent, heroAnim, setHeroAnim, bgStyle, setBgStyle, theme, setTheme, wallpaperPath, setWallpaperPath, wallpaperBlur, setWallpaperBlur, transparencyLevel, setTransparencyLevel, playerStyle, setPlayerStyle, fsLayout, setFsLayout, fsShowLyrics, setFsShowLyrics, fsLiveBg, setFsLiveBg, fsBeatGlow, setFsBeatGlow, fsArtCrossfade, setFsArtCrossfade } = useSettings()
   const toggleLyrics = () => { const v = !fsShowLyrics; setFsShowLyrics(v); if (!v && fsLayout === 'stack') setFsLayout('side') }
   const { artRgb } = useUI()
   const t = useT()
   const artworkHex = `#${artRgb.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('')}`
+  const [launchedTransparent, setLaunchedTransparent] = useState(false)
+  useEffect(() => { window.electronAPI?.getWindowTransparent?.().then(setLaunchedTransparent).catch(() => {}) }, [])
+  const restartNeeded = theme === 'transparent' && !launchedTransparent
 
   const [walls, setWalls] = useState<{ name: string; path: string }[]>([])
   const loadWalls = () => { window.electronAPI?.listWallpapers?.().then(setWalls).catch(() => {}) }
@@ -18,11 +21,11 @@ export function QuickCustomize() {
   useEffect(() => { if (open) loadWalls() }, [open])
 
   const themes: [Theme, string][] = [
-    ['default', t('themeDefault')], ['glass', t('themeGlass')], ['minimal', t('themeMinimal')],
+    ['default', t('themeDefault')], ['glass', t('themeGlass')], ['minimal', t('themeMinimal')], ['transparent', t('themeTransparent')],
   ]
   const anims: [HeroAnim, string][] = [
     ['wave', t('animWave')], ['threads', t('animThreads')], ['silk', t('animSilk')],
-    ['mist', t('animMist')], ['weave', t('animWeave')], ['spectrum', t('animSpectrum')],
+    ['mist', t('animMist')], ['weave', t('animWeave')], ['spectrum', t('animSpectrum')], ['none', t('animNone')],
   ]
   const bgs: [BgStyle, string][] = [
     ['artwork', t('bgDynamic')], ['accent', t('bgAccent')], ['aurora', t('bgAurora')],
@@ -51,10 +54,10 @@ export function QuickCustomize() {
             border: '1px solid rgba(255,255,255,0.1)',
             boxShadow: '0 14px 44px rgba(0,0,0,0.55)',
             transformOrigin: 'bottom right',
-            animation: closing ? 'scale-out 0.13s ease forwards' : 'scale-in 0.14s ease',
+            animation: closing ? 'scale-out 0.14s ease forwards' : 'scale-in 0.28s cubic-bezier(0.16,1,0.3,1)',
           }}
         >
-          <div className="p-4 space-y-4">
+          <div className="p-4 space-y-4 stagger">
             <Sec title={t('accentColor')}>
               <div className="flex flex-wrap gap-2">
                 {(Object.entries(ACCENT_COLORS) as [AccentColor, string][]).map(([k, hex]) => (
@@ -68,6 +71,26 @@ export function QuickCustomize() {
               <Chips items={themes} active={theme} onPick={setTheme} />
             </Sec>
 
+            {theme === 'transparent' && (
+              <Sec title={t('transparency')}>
+                <div className="flex items-center gap-2">
+                  <input type="range" min={5} max={95} step={1} value={transparencyLevel}
+                    onChange={e => setTransparencyLevel(Number(e.target.value))}
+                    className="flex-1" style={{ accentColor: 'var(--accent)' }} />
+                  <span className="text-[10px] text-white/40 tabular-nums w-8 text-right">{transparencyLevel}%</span>
+                </div>
+              </Sec>
+            )}
+
+            {restartNeeded && (
+              <button onClick={() => window.electronAPI?.restartApp?.()}
+                className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-all"
+                style={{ background: 'rgba(var(--accent-rgb),0.14)', border: '1px solid rgba(var(--accent-rgb),0.3)' }}>
+                <span className="text-white/70">{t('restartNeeded')}</span>
+                <span className="font-semibold" style={{ color: 'var(--accent)' }}>{t('restartNow')}</span>
+              </button>
+            )}
+
             <Sec title={t('playerStyleLabel')}>
               <Chips items={playerStyles} active={playerStyle} onPick={setPlayerStyle} />
             </Sec>
@@ -77,23 +100,26 @@ export function QuickCustomize() {
                 <Chips items={layouts} active={fsLayout} onPick={setFsLayout} disabled={fsShowLyrics ? undefined : ['stack']} />
                 <div className="space-y-2 mt-3">
                   <PToggle label={t('fsShowLyrics')} active={fsShowLyrics} onClick={toggleLyrics} />
-                  <PToggle label={t('fsLiveBg')} active={fsLiveBg && bgStyle !== 'wallpaper'} disabled={bgStyle === 'wallpaper'} onClick={() => setFsLiveBg(!fsLiveBg)} />
+                  {theme !== 'transparent' && <PToggle label={t('fsLiveBg')} active={fsLiveBg && bgStyle !== 'wallpaper'} disabled={bgStyle === 'wallpaper'} onClick={() => setFsLiveBg(!fsLiveBg)} />}
                   <PToggle label={t('fsBeatGlow')} active={fsBeatGlow} onClick={() => setFsBeatGlow(!fsBeatGlow)} />
                   <PToggle label={t('fsCrossfade')} active={fsArtCrossfade} onClick={() => setFsArtCrossfade(!fsArtCrossfade)} />
                 </div>
               </Sec>
             )}
 
-            {!isFs && (
+            {!isFs && theme !== 'transparent' && (
               <Sec title={t('heroAnimation')}>
                 <Chips items={anims} active={heroAnim} onPick={setHeroAnim} />
               </Sec>
             )}
 
+            {theme !== 'transparent' && (
             <Sec title={t('background')}>
               <Chips items={bgs} active={bgStyle} onPick={setBgStyle} />
             </Sec>
+            )}
 
+            {theme !== 'transparent' && (
             <Sec title={t('videoWallpapers')}>
               <div className="grid grid-cols-2 gap-1.5">
                 <WallChip label={t('wallpaperNone')} active={bgStyle !== 'wallpaper'} none
@@ -118,6 +144,7 @@ export function QuickCustomize() {
                   className="w-full" style={{ accentColor: 'var(--accent)' }} />
               </div>
             </Sec>
+            )}
           </div>
         </div>
       )}
@@ -127,9 +154,10 @@ export function QuickCustomize() {
         title={t('catAppearance')}
         className="w-11 h-11 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 hover:scale-105"
         style={{
-          background: open ? 'var(--accent)' : 'rgba(20,20,26,0.9)',
+          background: open ? 'var(--accent)' : (theme === 'transparent' ? 'rgba(20,20,26,0.35)' : 'rgba(20,20,26,0.9)'),
+          backdropFilter: theme === 'transparent' && !open ? 'blur(12px)' : undefined,
           border: '1px solid rgba(255,255,255,0.14)',
-          boxShadow: '0 6px 22px rgba(0,0,0,0.45)',
+          boxShadow: theme === 'transparent' && !open ? '0 6px 22px rgba(0,0,0,0.25)' : '0 6px 22px rgba(0,0,0,0.45)',
           color: open ? '#fff' : 'rgba(255,255,255,0.85)',
         }}
       >

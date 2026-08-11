@@ -56,6 +56,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setLoginItem: (enabled: boolean) => ipcRenderer.invoke('set-login-item', enabled),
   getLoginItem: () => ipcRenderer.invoke('get-login-item') as Promise<boolean>,
   setDatadomeBypass: (enabled: boolean) => ipcRenderer.invoke('set-datadome-bypass', enabled),
+  setWindowTransparent: (enabled: boolean) => ipcRenderer.invoke('set-window-transparent', enabled),
+  getWindowTransparent: () => ipcRenderer.invoke('get-window-transparent') as Promise<boolean>,
+  restartApp: () => ipcRenderer.invoke('restart-app'),
 
   // Secure OAuth token storage (OS keychain via safeStorage)
   secureSetToken: (token: string) => ipcRenderer.invoke('secure-set-token', token),

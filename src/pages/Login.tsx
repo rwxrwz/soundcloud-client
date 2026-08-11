@@ -32,6 +32,9 @@ declare global {
       setLoginItem: (enabled: boolean) => Promise<void>
       getLoginItem: () => Promise<boolean>
       setDatadomeBypass: (enabled: boolean) => Promise<void>
+      setWindowTransparent: (enabled: boolean) => Promise<void>
+      getWindowTransparent: () => Promise<boolean>
+      restartApp: () => Promise<void>
       secureSetToken: (token: string) => Promise<boolean>
       secureGetToken: () => Promise<string>
       getAppVersion: () => Promise<string>

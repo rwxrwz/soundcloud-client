@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useProfile, useUI, usePlayer } from '../store'
+import { useProfile, useUI, usePlayer, useSettings } from '../store'
 import { sc, SCPlaylist, SCTrack } from '../services/soundcloud'
 import { useT } from '../i18n'
 
@@ -10,6 +10,10 @@ export function MainPage() {
   const allPlaylists = [...localPlaylists, ...playlists]
   const { setSelectedPlaylist } = useUI()
   const { setTrack } = usePlayer()
+  const { heroAnim, perfNoHeroAnim, theme } = useSettings()
+  // The 240px top spacer only makes sense when the hero animation is actually drawn
+  // behind it; if it's off (none / perf / transparent theme), pull the content up.
+  const heroShown = theme !== 'transparent' && heroAnim !== 'none' && !perfNoHeroAnim
   const t = useT()
   const [loadingReleases, setLoadingReleases] = useState(false)
 
@@ -28,8 +32,9 @@ export function MainPage() {
   return (
     <div key="main" className="flex-1 flex flex-col overflow-hidden page-enter">
       <div className="flex-1 overflow-y-auto px-5 pb-5">
-        {/* Transparent spacer revealing the hero animation rendered behind (in Player) */}
-        <div style={{ height: 240 }} className="shrink-0" />
+        {/* Transparent spacer revealing the hero animation rendered behind (in Player).
+            Collapses when there's no animation to reveal, so content uses the space. */}
+        <div style={{ height: heroShown ? 240 : 24 }} className="shrink-0" />
 
         <div className="space-y-7">
           {/* Playlists */}

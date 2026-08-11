@@ -17,6 +17,7 @@ let tray: Tray | null = null
 let isQuitting = false
 let closeToTray = true   // when false, closing the window quits the app
 let datadomeBypass = false // when true, auto-solve DataDome captcha on a 403 write
+let launchedTransparent = false // whether the main window was created transparent
 let lastPlayerState: unknown = null
 // Hidden SC-context window — kept alive after auth so DataDome cookies stay valid
 let scProxy: BrowserWindow | null = null
@@ -75,13 +76,18 @@ function assertScUrl(raw: string): void {
 }
 
 function createMainWindow(): void {
+  // Transparent "liquid glass" theme: the window must be created transparent (it
+  // can't be toggled later), so we read a persisted flag file written by the
+  // renderer. On Win11 acrylic gives the frosted look; on Linux the compositor blurs.
+  launchedTransparent = existsSync(transparentFlagFile())
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 900,
     icon: ICON_PATH,
     minHeight: 600,
-    backgroundColor: '#0d0d0d',
+    backgroundColor: launchedTransparent ? '#00000000' : '#0d0d0d',
+    transparent: launchedTransparent,
     titleBarStyle: 'hidden',
     webPreferences: {
       preload: join(__dirname, '../preload/preload.js'),
@@ -616,6 +622,33 @@ ipcMain.handle('set-close-to-tray', (_, enabled: boolean) => { closeToTray = !!e
 
 // System: auto-solve DataDome captcha on a 403 write (default off)
 ipcMain.handle('set-datadome-bypass', (_, enabled: boolean) => { datadomeBypass = !!enabled })
+
+// Transparent-window theme. Transparency can't change after window creation, so the
+// renderer writes this flag file; main reads it on next launch. `get` returns how the
+// current window actually launched, so the UI can show a "restart needed" hint.
+const transparentFlagFile = () => join(app.getPath('userData'), 'window-transparent')
+ipcMain.handle('set-window-transparent', (_, enabled: boolean) => {
+  try {
+    if (enabled) writeFileSync(transparentFlagFile(), '1')
+    else if (existsSync(transparentFlagFile())) unlinkSync(transparentFlagFile())
+  } catch { /* ignore */ }
+})
+ipcMain.handle('get-window-transparent', () => launchedTransparent)
+ipcMain.handle('restart-app', () => {
+  const args = process.argv.slice(1)
+  if (process.platform === 'linux' && process.env.APPIMAGE) {
+    // Force extract-and-run on relaunch so it doesn't need FUSE. Many modern distros
+    // ship without libfuse2 -> the AppImage can't remount ("Cannot mount AppImage").
+    // The relaunched child inherits this env var, which bypasses the FUSE mount.
+    process.env.APPIMAGE_EXTRACT_AND_RUN = '1'
+    app.relaunch({ execPath: process.env.APPIMAGE, args })
+  } else if (process.env.PORTABLE_EXECUTABLE_FILE) {
+    app.relaunch({ execPath: process.env.PORTABLE_EXECUTABLE_FILE, args })
+  } else {
+    app.relaunch({ args })
+  }
+  app.exit(0)
+})
 
 // System: launch the app on Windows login.
 // This is a "portable" build: at runtime process.execPath points at the temp

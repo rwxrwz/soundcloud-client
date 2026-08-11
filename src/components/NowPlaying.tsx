@@ -17,6 +17,10 @@ export function NowPlaying() {
   const draggingRef = useRef(false)
 
   const { currentTrack, isPlaying, volume, progress, duration, setPlaying, setVolume, toggleMute, nextTrack, prevTrack, repeat, shuffle, toggleRepeat, toggleShuffle, queue, playbackError } = usePlayer()
+  // Ctrl+click the volume slider to type an exact percentage.
+  const [volEditing, setVolEditing] = useState(false)
+  const [volInput, setVolInput] = useState('')
+  const applyVol = () => { const n = parseInt(volInput, 10); if (!isNaN(n)) setVolume(Math.round(Math.min(1, Math.max(0, n / 100)) * 100) / 100); setVolEditing(false) }
   const { setBgColor, setArtRgb, setShowTrackPage, setArtistPage, showQueue, setShowQueue, showFullscreen, setShowFullscreen, setPlaylistPickerTrack, setContextMenu, showTrackPage, artistPageUser, selectedAlbum } = useUI()
   // Compact = the island is narrowed & floating over a browsing overlay. Hide the
   // artwork and secondary buttons there to keep it clean.
@@ -348,6 +352,7 @@ export function NowPlaying() {
         <div
           className="flex items-center gap-2 w-full"
           onWheel={(e) => setVolume(Math.round(Math.min(1, Math.max(0, volume - Math.sign(e.deltaY) * 0.05)) * 100) / 100)}
+          onMouseDownCapture={(e) => { if (e.ctrlKey) { e.preventDefault(); e.stopPropagation(); setVolInput(String(Math.round(volume * 100))); setVolEditing(true) } }}
         >
           <button
             onClick={toggleMute}
@@ -367,7 +372,19 @@ export function NowPlaying() {
               </svg>
             )}
           </button>
-          <Slider value={volume} min={0} max={1} onChange={setVolume} onCommit={setVolume} color={accentHex} />
+          {volEditing ? (
+            <input
+              autoFocus
+              value={volInput}
+              onChange={(e) => setVolInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))}
+              onKeyDown={(e) => { if (e.key === 'Enter') applyVol(); else if (e.key === 'Escape') setVolEditing(false) }}
+              onBlur={applyVol}
+              className="flex-1 min-w-0 text-xs text-white text-center rounded-md py-1 focus:outline-none"
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(var(--accent-rgb),0.5)' }}
+            />
+          ) : (
+            <Slider value={volume} min={0} max={1} onChange={setVolume} onCommit={setVolume} color={accentHex} />
+          )}
         </div>
       </div>
     </div>

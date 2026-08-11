@@ -38,8 +38,9 @@ import { QueueFlyout } from '../components/QueueFlyout'
 export function Player() {
   const { clientId, oauthToken, user } = useProfile()
   const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, selectedAlbum, showQueue, showSettings, setShowSettings, page } = useUI()
-  const { accent, bgStyle, wallpaperPath, wallpaperBlur, theme, playerStyle, fsLiveBg, perfNoBlur, perfNoHeroAnim, perfMiniOpaque } = useSettings()
+  const { accent, bgStyle, wallpaperPath, wallpaperBlur, theme, transparencyLevel, heroAnim, playerStyle, fsLiveBg, perfNoBlur, perfNoHeroAnim, perfMiniOpaque } = useSettings()
   const fsHome = playerStyle === 'fullscreen' && page === 'main'
+  const isTransparent = theme === 'transparent'
   // A browsing overlay is open → the bottom island narrows and floats above it.
   const overlayOpen = !!(showTrackPage || artistPageUser || selectedAlbum)
   // Keep the island visible even on the fullscreen home while an overlay is open.
@@ -151,6 +152,13 @@ export function Player() {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
+  // Transparent theme needs the window created transparent, which can't change at
+  // runtime -> persist the flag for main to read on next launch (Settings shows a
+  // restart button when the running window doesn't match the chosen theme).
+  useEffect(() => {
+    window.electronAPI?.setWindowTransparent?.(theme === 'transparent')
+  }, [theme])
+
   // Performance: same trick for the "no blur" option
   useEffect(() => {
     if (perfNoBlur) document.documentElement.dataset.noblur = '1'
@@ -188,11 +196,11 @@ export function Player() {
 
   return (
     <div
-      className={`h-screen flex flex-col relative${bgStyle === 'aurora' && !livingBgActive ? ' aurora-bg' : ''}`}
-      style={{ background: getBg(), transition: bgStyle === 'aurora' ? undefined : 'background 1.2s ease' }}
+      className={`h-screen flex flex-col relative${bgStyle === 'aurora' && !livingBgActive && !isTransparent ? ' aurora-bg' : ''}`}
+      style={{ background: isTransparent ? `rgba(10,10,14,${1 - transparencyLevel / 100})` : getBg(), borderRadius: isTransparent ? 12 : undefined, transition: bgStyle === 'aurora' ? undefined : (isTransparent ? 'background 0.45s ease' : 'background 1.2s ease') }}
     >
       {/* Custom wallpaper background (behind everything) - video or image by ext */}
-      {bgStyle === 'wallpaper' && wallpaperPath && (
+      {!isTransparent && bgStyle === 'wallpaper' && wallpaperPath && (
         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 0 }}>
           {/\.(mp4|webm)$/i.test(wallpaperPath) ? (
             <video
@@ -214,11 +222,11 @@ export function Player() {
       )}
 
       {/* Living artwork background — full window, behind the glass UI (fullscreen home) */}
-      {fsHome && fsLiveBg && bgStyle !== 'wallpaper' && <FsLivingBg />}
+      {!isTransparent && fsHome && fsLiveBg && bgStyle !== 'wallpaper' && <FsLivingBg />}
 
       {/* Home hero animation — sits BEHIND the sidebar/content (z-index -1) and
           pokes slightly onto the sidebar, showing through its glass */}
-      {page === 'main' && playerStyle !== 'fullscreen' && !perfNoHeroAnim && (
+      {!isTransparent && heroAnim !== 'none' && page === 'main' && playerStyle !== 'fullscreen' && !perfNoHeroAnim && (
         <div className="absolute pointer-events-none" style={{ top: 36, left: 170, right: 0, height: 240, zIndex: 0 }}>
           <HeroAnim />
         </div>
@@ -237,7 +245,7 @@ export function Player() {
             // The row grows by the bar's negative offset; only the content column
             // should slide under the bar. 18 gives that height back, +12 keeps the
             // usual gap between the sidebar and the bar.
-            marginBottom: islandOpen && !overlayOpen ? 30 : 0,
+            marginBottom: islandOpen && !overlayOpen ? (isTransparent ? 12 : 30) : 0,
             transition: 'width 0.34s cubic-bezier(0.16,1,0.3,1)',
           }}
         >
@@ -265,7 +273,7 @@ export function Player() {
           // Pull the whole bar up over the list so the scroll container's clip edge
           // ends up hidden behind it instead of cutting a visible line above it.
           // Only while it's actually docked — not when collapsed or floating.
-          marginTop: islandOpen && !overlayOpen ? -18 : 0,
+          marginTop: islandOpen && !overlayOpen && !isTransparent ? -18 : 0,
         }}
       >
         <div

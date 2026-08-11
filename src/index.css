@@ -123,6 +123,31 @@ canvas { display: block; }
 [data-theme="minimal"] .glass-card:hover { background: #16161c; transform: none; box-shadow: none; }
 /* corners kept identical to default */
 
+/* Transparent — real see-through window ("liquid glass"). body becomes transparent
+   so the OS shows through; the desktop blur behind is done by the compositor
+   (Linux/Hyprland) or native acrylic (Win11), not by CSS. The window tint is on the
+   Player root (driven by the transparency slider). Panels keep their glass look but
+   lean lighter so the see-through effect reads. */
+[data-theme="transparent"] body { background: transparent; }
+[data-theme="transparent"] {
+  --glass-bg: rgba(255,255,255,0.05);
+  --glass-border: rgba(255,255,255,0.16);
+  --glass-blur: 30px;
+}
+[data-theme="transparent"] .glass-island {
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(30px) saturate(160%) brightness(1.02);
+  -webkit-backdrop-filter: blur(30px) saturate(160%) brightness(1.02);
+  border-color: rgba(255,255,255,0.16);
+}
+[data-theme="transparent"] .glass-card {
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border-color: rgba(255,255,255,0.12);
+}
+[data-theme="transparent"] .glass-card:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22); }
+
 /* ── Slider ───────────────────────────────────────────────── */
 .slider-wrap {
   position: relative;

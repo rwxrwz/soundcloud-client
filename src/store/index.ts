@@ -304,8 +304,8 @@ export type PerfKey = 'perfPauseUnfocused' | 'perfLowFps' | 'perfNoBlur' | 'perf
 export type AccentColor = 'orange' | 'blue' | 'green' | 'pink' | 'purple' | 'red' | 'cyan' | 'yellow' | 'white' | 'indigo' | 'slate' | 'mauve' | 'artwork'
 export type BgStyle = 'artwork' | 'accent' | 'dark' | 'midnight' | 'aurora' | 'wallpaper'
 export type VisualizerStyle = 'bars' | 'wave' | 'mirror'
-export type HeroAnim = 'wave' | 'threads' | 'silk' | 'mist' | 'weave' | 'spectrum'
-export type Theme = 'default' | 'glass' | 'minimal'
+export type HeroAnim = 'wave' | 'threads' | 'silk' | 'mist' | 'weave' | 'spectrum' | 'none'
+export type Theme = 'default' | 'glass' | 'minimal' | 'transparent'
 export type PlayerStyle = 'default' | 'fullscreen'
 export type FsLayout = 'side' | 'stack' | 'split'
 export type Lang = 'ru' | 'en'
@@ -320,7 +320,7 @@ export type SettingsPreset = { id: string; name: string; data: Record<string, un
 // main process (the UI does this after applySettingsPreset).
 export const SETTINGS_PRESET_KEYS = [
   'theme', 'accent', 'bgStyle', 'visualizerStyle', 'heroAnim',
-  'playerStyle', 'fsLayout', 'fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'lyricsFontScale', 'wallpaperBlur',
+  'playerStyle', 'fsLayout', 'fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'lyricsFontScale', 'wallpaperBlur', 'transparencyLevel',
   'hiddenNav', 'startPage', 'lang',
   'perfPauseUnfocused', 'perfLowFps', 'perfNoBlur', 'perfNoHeroAnim', 'perfMiniOpaque', 'perfBigLists',
   'eq', 'eqEnabled', 'crossfade',
@@ -341,11 +341,11 @@ export function settingsSnapshot(s: Record<string, unknown>): Record<string, unk
 // the right type / enum / range, so a hostile code can't poison the UI or audio.
 export function validateSettingsPresetData(d: Record<string, unknown>): Record<string, unknown> {
   const ENUMS: Record<string, readonly string[]> = {
-    theme: ['default', 'glass', 'minimal'],
+    theme: ['default', 'glass', 'minimal', 'transparent'],
     accent: [...Object.keys(ACCENT_COLORS), 'artwork'],
     bgStyle: ['artwork', 'accent', 'dark', 'midnight', 'aurora', 'wallpaper'],
     visualizerStyle: ['bars', 'wave', 'mirror'],
-    heroAnim: ['wave', 'threads', 'silk', 'mist', 'weave', 'spectrum'],
+    heroAnim: ['wave', 'threads', 'silk', 'mist', 'weave', 'spectrum', 'none'],
     playerStyle: ['default', 'fullscreen'],
     fsLayout: ['side', 'stack', 'split'],
     startPage: ['main', 'stream', 'releases', 'likes', 'playlists'],
@@ -361,6 +361,7 @@ export function validateSettingsPresetData(d: Record<string, unknown>): Record<s
     if (boolKeys.has(key)) { if (typeof val === 'boolean') out[key] = val; continue }
     if (key === 'lyricsFontScale') { if (typeof val === 'number' && isFinite(val)) out[key] = Math.max(0.7, Math.min(1.8, val)); continue }
     if (key === 'wallpaperBlur') { if (typeof val === 'number' && isFinite(val)) out[key] = Math.max(0, Math.min(30, Math.round(val))); continue }
+    if (key === 'transparencyLevel') { if (typeof val === 'number' && isFinite(val)) out[key] = Math.max(5, Math.min(95, Math.round(val))); continue }
     if (key === 'crossfade') { if (typeof val === 'number' && isFinite(val)) out[key] = Math.max(0, Math.min(12, val)); continue }
     if (key === 'eq') { if (Array.isArray(val) && val.length === 5 && val.every(n => typeof n === 'number' && isFinite(n))) out.eq = (val as number[]).map(n => Math.max(-12, Math.min(12, Math.round(n)))); continue }
     if (key === 'hiddenNav') { if (Array.isArray(val) && val.every(v => typeof v === 'string')) out.hiddenNav = [...(val as string[])].sort(); continue }
@@ -385,6 +386,7 @@ interface SettingsState {
   fsArtCrossfade: boolean  // crossfade artwork on track change
   lyricsFontScale: number  // lyrics font multiplier (1 = default)
   wallpaperBlur: number    // custom wallpaper blur, px (0 = off)
+  transparencyLevel: number // transparent theme: 100 = fully clear, lower = denser tint
   wallpaperPath: string
   hiddenNav: string[]      // sidebar nav ids hidden from the rail
   // ── Performance ──
@@ -422,6 +424,7 @@ interface SettingsState {
   setFsArtCrossfade: (v: boolean) => void
   setLyricsFontScale: (v: number) => void
   setWallpaperBlur: (v: number) => void
+  setTransparencyLevel: (v: number) => void
   setWallpaperPath: (p: string) => void
   toggleNavHidden: (id: string) => void
   setPerf: (key: PerfKey, v: boolean) => void
@@ -467,6 +470,7 @@ const SETTINGS_DEFAULTS = {
   lyricsFontScale: 1,
   wallpaperPath: '',
   wallpaperBlur: 0,
+  transparencyLevel: 80,
   hiddenNav: [] as string[],
   perfPauseUnfocused: false,
   perfLowFps: false,
@@ -509,6 +513,7 @@ export const useSettings = create<SettingsState>()(
       setLyricsFontScale: (lyricsFontScale) => set({ lyricsFontScale }),
       setWallpaperPath: (wallpaperPath) => set({ wallpaperPath }),
       setWallpaperBlur: (wallpaperBlur) => set({ wallpaperBlur }),
+      setTransparencyLevel: (transparencyLevel) => set({ transparencyLevel }),
       toggleNavHidden: (id) => set(s => ({
         hiddenNav: s.hiddenNav.includes(id) ? s.hiddenNav.filter(x => x !== id) : [...s.hiddenNav, id],
       })),
@@ -583,11 +588,11 @@ export const useSettings = create<SettingsState>()(
           state.eq = [0, 0, 0, 0, 0]
         }
         // Default hero animation for older persisted state
-        if (state && !['wave', 'threads', 'silk', 'mist', 'weave', 'spectrum'].includes(state.heroAnim)) {
+        if (state && !['wave', 'threads', 'silk', 'mist', 'weave', 'spectrum', 'none'].includes(state.heroAnim)) {
           state.heroAnim = 'wave'
         }
         // Default theme for older persisted state
-        if (state && !['default', 'glass', 'minimal'].includes(state.theme)) {
+        if (state && !['default', 'glass', 'minimal', 'transparent'].includes(state.theme)) {
           state.theme = 'default'
         }
         if (state && !['default', 'fullscreen'].includes(state.playerStyle)) {

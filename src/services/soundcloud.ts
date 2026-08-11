@@ -210,13 +210,15 @@ class SoundCloudService {
   async getTracksByIds(ids: number[]): Promise<SCTrack[]> {
     if (!ids.length) return []
     const BATCH = 50
-    const results: SCTrack[] = []
+    const byId = new Map<number, SCTrack>()
     for (let i = 0; i < ids.length; i += BATCH) {
       const batch = ids.slice(i, i + BATCH)
       const res = await this.get<SCTrack[]>('/tracks', { ids: batch.join(',') })
-      results.push(...res)
+      for (const tr of res) byId.set(tr.id, tr)
     }
-    return results
+    // SC returns /tracks?ids= in its own order (by id), not the requested order, so
+    // restore the input order — otherwise imported/shared playlists come out shuffled.
+    return ids.map(id => byId.get(id)).filter((tr): tr is SCTrack => !!tr)
   }
 
   // Fill in stub tracks (those without title/duration) in a playlist

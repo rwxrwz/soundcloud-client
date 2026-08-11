@@ -240,6 +240,10 @@ function VolumeColumn({ accentHex }: { accentHex: string }) {
   const active = dragging || hovering
   const pct = Math.min(100, Math.max(0, volume * 100))
   const round = (v: number) => Math.round(v * 100) / 100
+  // Ctrl+click to type an exact percentage.
+  const [editing, setEditing] = useState(false)
+  const [inputVal, setInputVal] = useState('')
+  const applyInput = () => { const n = parseInt(inputVal, 10); if (!isNaN(n)) setVolume(round(Math.min(1, Math.max(0, n / 100)))); setEditing(false) }
 
   // top of the track = full volume, bottom = muted
   const valueFrom = useCallback((clientY: number) => {
@@ -249,6 +253,7 @@ function VolumeColumn({ accentHex }: { accentHex: string }) {
   }, [volume])
 
   const onMouseDown = (e: React.MouseEvent) => {
+    if (e.ctrlKey) { e.preventDefault(); e.stopPropagation(); setInputVal(String(Math.round(volume * 100))); setEditing(true); return }
     e.preventDefault()
     setDragging(true)
     setVolume(valueFrom(e.clientY))
@@ -268,7 +273,18 @@ function VolumeColumn({ accentHex }: { accentHex: string }) {
   }
 
   return (
-    <div className="pt-3 pb-1 flex flex-col items-center gap-2">
+    <div className="pt-3 pb-1 flex flex-col items-center gap-2 relative">
+      {editing && (
+        <input
+          autoFocus
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))}
+          onKeyDown={(e) => { if (e.key === 'Enter') applyInput(); else if (e.key === 'Escape') setEditing(false) }}
+          onBlur={applyInput}
+          className="absolute z-20 left-1/2 -translate-x-1/2 w-12 text-center text-xs text-white rounded-md py-1 focus:outline-none"
+          style={{ top: 40, background: 'rgba(20,20,26,0.98)', border: '1px solid rgba(var(--accent-rgb),0.5)' }}
+        />
+      )}
       <div
         ref={trackRef}
         onMouseDown={onMouseDown}
