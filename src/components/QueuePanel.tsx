@@ -64,7 +64,7 @@ export function QueuePanel() {
               <button
                 onClick={clearQueue}
                 title={t('clearQueue')}
-                className="flex items-center gap-1.5 px-2.5 h-8 rounded-full text-xs font-medium text-white/55 hover:text-white transition-all"
+                className="icon-btn flex items-center gap-1.5 px-2.5 h-8 rounded-full text-xs font-medium text-white/55 hover:text-white transition-all"
                 style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -75,7 +75,7 @@ export function QueuePanel() {
             )}
             <button
               onClick={close}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/8 transition-all"
+              className="icon-btn w-8 h-8 rounded-full flex items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/8 transition-all"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
@@ -212,7 +212,7 @@ function TrackRow({ track, isCurrent, faded, accentHex, dragOver, onDragStart, o
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track }) }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 group"
+      className="icon-btn flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 group"
       style={{
         background: isCurrent
           ? `rgba(${hexToRgb(accentHex)}, 0.1)`

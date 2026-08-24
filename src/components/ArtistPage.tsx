@@ -22,7 +22,7 @@ function hostname(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
 }
 
-export function ArtistPage() {
+export function ArtistPage({ z = 50 }: { z?: number }) {
   const { artistPageUser, setArtistPage, setContextMenu, drillArtist, backArtist, artistHistory, setSelectedPlaylist } = useUI()
   const { setTrack, currentTrack, isPlaying, setPlaying } = usePlayer()
   const { user: me, followingIds, followOptimistic, unfollowOptimistic, likes, playlists, localPlaylists, pinnedFriendIds, togglePinFriend } = useProfile()
@@ -204,13 +204,15 @@ export function ArtistPage() {
   if (!artistPageUser) return null
 
   const avatar = sc.formatArtwork(user?.avatar_url ?? artistPageUser.avatar_url, 't500x500')
+  const artistLink = user?.permalink_url ?? artistPageUser.permalink_url
   const banner = user?.visual_url ?? user?.visuals?.visuals?.[0]?.visual_url
   const badges = user?.badges
   const proLabel = badges?.pro_unlimited ? 'PRO UNLIMITED' : badges?.pro ? 'PRO' : null
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-end track-page-backdrop ${closing ? 'closing' : ''}`}
+      className={`fixed inset-0 flex items-end track-page-backdrop ${closing ? 'closing' : ''}`}
+      style={{ zIndex: z }}
       onClick={e => { if (e.target === e.currentTarget) close() }}
     >
       <div className={`w-full track-page-panel glass-island rounded-t-3xl flex flex-col overflow-hidden ${closing ? 'closing' : ''}`}
@@ -224,7 +226,7 @@ export function ArtistPage() {
         {/* Close */}
         <button
           onClick={close}
-          className="absolute top-4 right-4 z-30 w-8 h-8 rounded-full flex items-center justify-center bg-black/35 hover:bg-black/55 transition-colors duration-150"
+          className="icon-btn absolute top-4 right-4 z-30 w-8 h-8 rounded-full flex items-center justify-center bg-black/35 hover:bg-black/55 transition-colors duration-150"
         >
           <svg className="w-4 h-4 text-white/85" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <path d="M18 6L6 18M6 6l12 12"/>
@@ -235,7 +237,7 @@ export function ArtistPage() {
         {artistHistory.length > 0 && (
           <button
             onClick={backArtist}
-            className="absolute top-4 left-4 z-30 w-8 h-8 rounded-full flex items-center justify-center bg-black/35 hover:bg-black/55 transition-colors duration-150"
+            className="icon-btn absolute top-4 left-4 z-30 w-8 h-8 rounded-full flex items-center justify-center bg-black/35 hover:bg-black/55 transition-colors duration-150"
           >
             <svg className="w-4 h-4 text-white/85" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
           </button>
@@ -311,26 +313,42 @@ export function ArtistPage() {
               <span className="px-4 py-2 rounded-full text-sm font-medium text-white/60" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>{t('itsYou')}</span>
             ) : (
               <button
-                onClick={toggleFollow}
-                className="px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 active:scale-95"
+                onClick={toggleFollow}                className="icon-btn px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 active:scale-95"
                 style={isFollowing
                   ? { background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.18)' }
                   : { background: 'var(--accent)', color: '#fff', boxShadow: '0 4px 18px rgba(var(--accent-rgb),0.4)' }}
               >
-                {isFollowing ? `✓ ${t('unfollow')}` : t('follow')}
+                <span>{isFollowing ? `✓ ${t('unfollow')}` : t('follow')}</span>
               </button>
             )}
             {isFollowing && !isSelf && artistId !== undefined && (
               <button
-                onClick={() => togglePinFriend(artistId)}
-                title={isPinned ? t('friendUnpin') : t('friendPin')}
-                className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95"
+                onClick={() => togglePinFriend(artistId)}                title={isPinned ? t('friendUnpin') : t('friendPin')}
+                className="icon-btn w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95"
                 style={isPinned
                   ? { background: 'rgba(var(--accent-rgb),0.18)', color: 'var(--accent)', border: '1px solid rgba(var(--accent-rgb),0.4)' }
                   : { background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M9 4v6l-2 3h10l-2-3V4M12 16v5M8 4h8" /></svg>
               </button>
+            )}
+            {artistLink && (
+              <>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(artistLink).catch(() => {}); showToast(t('linkCopied'), 'success') }}                  title={t('ctxCopyLink')}
+                  className="icon-btn w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95"
+                  style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
+                </button>
+                <button
+                  onClick={() => window.open(artistLink)}                  title={t('ctxOpenBrowser')}
+                  className="icon-btn w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95"
+                  style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><path d="M15 3h6v6M10 14L21 3" /></svg>
+                </button>
+              </>
             )}
           </div>
 
@@ -340,15 +358,14 @@ export function ArtistPage() {
               {webProfiles.map((wp, i) => (
                 <button
                   key={i}
-                  onClick={() => wp.url && window.open(wp.url)}
-                  title={wp.url}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/65 hover:text-white transition-all"
+                  onClick={() => wp.url && window.open(wp.url)}                  title={wp.url}
+                  className="icon-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/65 hover:text-white transition-all"
                   style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
                 >
                   <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20"/>
                   </svg>
-                  {wp.title || wp.network || hostname(wp.url)}
+                  <span>{wp.title || wp.network || hostname(wp.url)}</span>
                 </button>
               ))}
             </div>
@@ -360,16 +377,19 @@ export function ArtistPage() {
               value={fmt(user?.followers_count)}
               label={t('followers')}
               loading={loading}
+              onClick={() => setTab('followers')}
             />
             <StatCard
               value={fmt(user?.followings_count)}
               label={t('following')}
               loading={loading}
+              onClick={() => setTab('following')}
             />
             <StatCard
               value={fmt(user?.track_count)}
               label={t('tracksLabel')}
               loading={loading}
+              onClick={() => setTab('releases')}
             />
           </div>
 
@@ -386,7 +406,7 @@ export function ArtistPage() {
           {library.tracks.length > 0 && (
             <div className="mb-6 rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
               <button onClick={() => setShowLibrary(v => !v)}
-                className="w-full flex items-center justify-between gap-3 p-3 text-left transition-colors"
+                className="icon-btn w-full flex items-center justify-between gap-3 p-3 text-left transition-colors rounded-xl"
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 <div className="flex items-center gap-3 min-w-0">
@@ -495,12 +515,12 @@ export function ArtistPage() {
                 </div>
             )}
 
-            {tabNext && !tabLoading && tab !== 'releases' && tab !== 'albums' && (
+            {tabNext && !tabLoading && !tabEmpty && tab !== 'releases' && tab !== 'albums' && (
               <div className="flex justify-center pt-3">
                 <button
                   onClick={loadMoreTab}
                   disabled={tabMoreLoading}
-                  className="px-4 py-2 rounded-full text-xs font-medium text-white/70 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
+                  className="icon-btn px-4 py-2 rounded-full text-xs font-medium text-white/70 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
                   style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
                 >
                   {tabMoreLoading && <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
@@ -637,7 +657,7 @@ export function ArtistPage() {
                 <button
                   onClick={loadMoreTracks}
                   disabled={tracksMoreLoading}
-                  className="px-4 py-2 rounded-full text-xs font-medium text-white/70 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
+                  className="icon-btn px-4 py-2 rounded-full text-xs font-medium text-white/70 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
                   style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
                 >
                   {tracksMoreLoading && <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
@@ -712,7 +732,7 @@ function AlbumRow({ album, expanded, tracks, loading, onToggle }: {
     <div className="rounded-xl overflow-hidden mb-2"
       style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
       {/* Header — stays in place while the tracklist expands below */}
-      <button onClick={onToggle} className="w-full flex items-center gap-3 p-2.5 text-left">
+      <button onClick={onToggle} className="icon-btn w-full flex items-center gap-3 p-2.5 text-left rounded-xl">
         <div className="w-14 h-14 rounded-lg overflow-hidden bg-white/5 shrink-0">
           {art
             ? <img src={art} alt="" className="w-full h-full object-cover" />
@@ -796,16 +816,18 @@ function UserAvatar({ u }: { u: SCUser }) {
     : <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/60 shrink-0">{initials}</div>
 }
 
-function StatCard({ value, label, loading }: { value: string; label: string; loading: boolean }) {
+function StatCard({ value, label, loading, onClick }: { value: string; label: string; loading: boolean; onClick?: () => void }) {
   return (
-    <div
-      className="flex flex-col items-center py-3 rounded-xl"
+    <button
+      onClick={onClick}
+      disabled={!onClick}
+      className="icon-btn flex flex-col items-center py-3 rounded-xl transition-all disabled:cursor-default"
       style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.07)' }}
     >
       <span className={`text-lg font-bold text-white transition-opacity duration-300 ${loading ? 'opacity-30' : 'opacity-100'}`}>
         {loading ? '···' : value}
       </span>
       <span className="text-[10px] text-white/30 uppercase tracking-wide mt-0.5">{label}</span>
-    </div>
+    </button>
   )
 }

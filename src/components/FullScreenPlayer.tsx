@@ -109,7 +109,7 @@ export function FullScreenPlayer({ analyserRef, seek }: Props) {
       <button
         onClick={() => setShowLyrics(!showLyrics)}
         title={t('lyrics')}
-        className="absolute top-5 left-5 z-10 px-3 h-10 rounded-full flex items-center gap-2 text-sm transition-all"
+        className="icon-btn absolute top-5 left-5 z-10 px-3 h-10 rounded-full flex items-center gap-2 text-sm transition-all"
         style={{
           background: showLyrics ? accentHex : 'rgba(255,255,255,0.08)',
           color: showLyrics ? '#111' : 'rgba(255,255,255,0.7)',
@@ -126,7 +126,7 @@ export function FullScreenPlayer({ analyserRef, seek }: Props) {
       <button
         onClick={close}
         title={t('exitFullscreen')}
-        className="absolute top-5 right-5 z-10 w-10 h-10 rounded-full flex items-center justify-center text-white/60 hover:text-white transition-all"
+        className="icon-btn absolute top-5 right-5 z-10 w-10 h-10 rounded-full flex items-center justify-center text-white/60 hover:text-white transition-all"
         style={{ background: 'rgba(255,255,255,0.08)', WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -205,7 +205,7 @@ export function FullScreenPlayer({ analyserRef, seek }: Props) {
             {isPlaying ? (
               <svg className="w-7 h-7" style={{ color: '#111' }} viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
             ) : (
-              <svg className="w-7 h-7 ml-1" style={{ color: '#111' }} viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+              <svg className="w-7 h-7 ml-0.5" style={{ color: '#111' }} viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
             )}
           </button>
 

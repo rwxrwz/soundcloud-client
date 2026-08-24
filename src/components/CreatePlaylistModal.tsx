@@ -77,7 +77,7 @@ export function CreatePlaylistModal({ initialTrackIds = [], onClose, onCreated }
           <div className="flex items-center gap-2 mt-1">
             <button
               onClick={onClose}
-              className="flex-1 py-2 rounded-xl text-sm font-medium text-white/60 hover:text-white/90 transition-all"
+              className="icon-btn flex-1 py-2 rounded-xl text-sm font-medium text-white/60 hover:text-white/90 transition-all"
               style={{ background: 'rgba(255,255,255,0.06)' }}
             >
               {t('cancel')}
@@ -85,7 +85,7 @@ export function CreatePlaylistModal({ initialTrackIds = [], onClose, onCreated }
             <button
               onClick={submit}
               disabled={busy || !name.trim()}
-              className="flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+              className="icon-btn flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 flex items-center justify-center gap-2"
               style={{ background: 'var(--accent)' }}
             >
               {busy && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
@@ -102,7 +102,7 @@ export function CreatePlaylistModal({ initialTrackIds = [], onClose, onCreated }
 function ShareBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick}
-      className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150"
+      className="icon-btn flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150"
       style={{ background: active ? 'var(--accent)' : 'transparent', color: active ? '#fff' : 'rgba(255,255,255,0.45)' }}
     >{label}</button>
   )

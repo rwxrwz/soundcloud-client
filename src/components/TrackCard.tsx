@@ -36,7 +36,7 @@ function TrackCardBase({ track, queue, showDate }: Props) {
     <div
       onClick={handleClick}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track }) }}
-      className="group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200"
+      className="icon-btn group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200"
       style={{
         background: active ? `rgba(var(--accent-rgb), 0.12)` : 'transparent',
         border: active ? `1px solid rgba(var(--accent-rgb), 0.25)` : '1px solid transparent',

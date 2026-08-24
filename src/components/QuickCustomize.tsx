@@ -84,7 +84,7 @@ export function QuickCustomize() {
 
             {restartNeeded && (
               <button onClick={() => window.electronAPI?.restartApp?.()}
-                className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-all"
+                className="icon-btn w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-all"
                 style={{ background: 'rgba(var(--accent-rgb),0.14)', border: '1px solid rgba(var(--accent-rgb),0.3)' }}>
                 <span className="text-white/70">{t('restartNeeded')}</span>
                 <span className="font-semibold" style={{ color: 'var(--accent)' }}>{t('restartNow')}</span>

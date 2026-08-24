@@ -70,6 +70,7 @@ interface ProfileState {
 interface UIState {
   page: 'main' | 'stream' | 'releases' | 'likes' | 'playlists' | 'search' | 'playlist-detail' | 'friends'
   playlistsSubPage: 'playlists' | 'playlist-detail'
+  playlistReturnPage: UIState['page']   // where "back" from a playlist should return
   selectedPlaylist: SCPlaylist | null
   selectedAlbum: SCPlaylist | null
   searchQuery: string
@@ -82,6 +83,7 @@ interface UIState {
   showQueue: boolean
   artistPageUser: SCUser | null
   artistHistory: SCUser[]   // back-stack for drilling user → following → user …
+  overlayOrder: ('track' | 'artist' | 'album')[]  // open-order of full-screen overlays, for stacked z-index
   playlistPickerTrack: SCTrack | null
   setPlaylistPickerTrack: (track: SCTrack | null) => void
   showSettings: boolean
@@ -320,7 +322,7 @@ export type SettingsPreset = { id: string; name: string; data: Record<string, un
 // main process (the UI does this after applySettingsPreset).
 export const SETTINGS_PRESET_KEYS = [
   'theme', 'accent', 'bgStyle', 'visualizerStyle', 'heroAnim',
-  'playerStyle', 'fsLayout', 'fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'lyricsFontScale', 'wallpaperBlur', 'transparencyLevel',
+  'playerStyle', 'fsLayout', 'fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'lyricsFontScale', 'wallpaperBlur', 'transparencyLevel', 'iconGlow',
   'hiddenNav', 'startPage', 'lang',
   'perfPauseUnfocused', 'perfLowFps', 'perfNoBlur', 'perfNoHeroAnim', 'perfMiniOpaque', 'perfBigLists',
   'eq', 'eqEnabled', 'crossfade',
@@ -351,7 +353,7 @@ export function validateSettingsPresetData(d: Record<string, unknown>): Record<s
     startPage: ['main', 'stream', 'releases', 'likes', 'playlists'],
     lang: ['ru', 'en'],
   }
-  const boolKeys = new Set(['fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'perfPauseUnfocused', 'perfLowFps', 'perfNoBlur', 'perfNoHeroAnim', 'perfMiniOpaque', 'perfBigLists', 'eqEnabled', 'closeToTray', 'mediaKeys', 'autoSkipDrm', 'launchAtStartup', 'datadomeBypass'])
+  const boolKeys = new Set(['fsShowLyrics', 'fsLiveBg', 'fsBeatGlow', 'fsArtCrossfade', 'perfPauseUnfocused', 'perfLowFps', 'perfNoBlur', 'perfNoHeroAnim', 'perfMiniOpaque', 'perfBigLists', 'eqEnabled', 'closeToTray', 'mediaKeys', 'autoSkipDrm', 'launchAtStartup', 'datadomeBypass', 'iconGlow'])
   const out: Record<string, unknown> = {}
   for (const key of SETTINGS_PRESET_KEYS) {
     if (!(key in d)) continue
@@ -387,6 +389,7 @@ interface SettingsState {
   lyricsFontScale: number  // lyrics font multiplier (1 = default)
   wallpaperBlur: number    // custom wallpaper blur, px (0 = off)
   transparencyLevel: number // transparent theme: 100 = fully clear, lower = denser tint
+  iconGlow: boolean        // cursor-tracking glow on action buttons
   wallpaperPath: string
   hiddenNav: string[]      // sidebar nav ids hidden from the rail
   // ── Performance ──
@@ -425,6 +428,7 @@ interface SettingsState {
   setLyricsFontScale: (v: number) => void
   setWallpaperBlur: (v: number) => void
   setTransparencyLevel: (v: number) => void
+  setIconGlow: (v: boolean) => void
   setWallpaperPath: (p: string) => void
   toggleNavHidden: (id: string) => void
   setPerf: (key: PerfKey, v: boolean) => void
@@ -471,6 +475,7 @@ const SETTINGS_DEFAULTS = {
   wallpaperPath: '',
   wallpaperBlur: 0,
   transparencyLevel: 80,
+  iconGlow: true,
   hiddenNav: [] as string[],
   perfPauseUnfocused: false,
   perfLowFps: false,
@@ -514,6 +519,7 @@ export const useSettings = create<SettingsState>()(
       setWallpaperPath: (wallpaperPath) => set({ wallpaperPath }),
       setWallpaperBlur: (wallpaperBlur) => set({ wallpaperBlur }),
       setTransparencyLevel: (transparencyLevel) => set({ transparencyLevel }),
+      setIconGlow: (iconGlow) => set({ iconGlow }),
       toggleNavHidden: (id) => set(s => ({
         hiddenNav: s.hiddenNav.includes(id) ? s.hiddenNav.filter(x => x !== id) : [...s.hiddenNav, id],
       })),
@@ -640,6 +646,7 @@ export const useUI = create<UIState>()(
     (set, get) => ({
       page: 'main',
       playlistsSubPage: 'playlists',
+      playlistReturnPage: 'playlists',
       selectedPlaylist: null,
       selectedAlbum: null,
       searchQuery: '',
@@ -651,6 +658,7 @@ export const useUI = create<UIState>()(
       showTrackPage: false,
       showQueue: false,
       artistPageUser: null,
+      overlayOrder: [],
       artistHistory: [],
       playlistPickerTrack: null,
       setPlaylistPickerTrack: (playlistPickerTrack) => set({ playlistPickerTrack }),
@@ -669,20 +677,20 @@ export const useUI = create<UIState>()(
       showFullscreen: false,
       setShowFullscreen: (showFullscreen) => set({ showFullscreen }),
       setPage: (page) => set({ page }),
-      setSelectedPlaylist: (pl) => set({ selectedPlaylist: pl, page: 'playlist-detail', playlistsSubPage: 'playlist-detail' }),
-      setSelectedAlbum: (selectedAlbum) => set({ selectedAlbum }),
+      setSelectedPlaylist: (pl) => set(s => ({ selectedPlaylist: pl, page: 'playlist-detail', playlistsSubPage: 'playlist-detail', playlistReturnPage: s.page === 'playlist-detail' ? s.playlistReturnPage : s.page })),
+      setSelectedAlbum: (selectedAlbum) => set(s => ({ selectedAlbum, overlayOrder: [...s.overlayOrder.filter(k => k !== 'album'), ...(selectedAlbum ? ['album' as const] : [])] })),
       goToPlaylists: () => set(s => ({ page: s.playlistsSubPage })),
-      backFromPlaylist: () => set({ page: 'playlists', playlistsSubPage: 'playlists' }),
+      backFromPlaylist: () => set(s => ({ page: s.playlistReturnPage, playlistsSubPage: 'playlists' })),
       setSearch: (q) => set({ searchQuery: q }),
       setSearchResults: (tracks) => set({ searchResults: tracks }),
       setSearchTab: (searchTab) => set({ searchTab }),
       setBgColor: (c) => set({ bgColor: c }),
       setArtRgb: (artRgb) => set({ artRgb }),
       setTrackOrder: (trackOrder) => set({ trackOrder }),
-      setShowTrackPage: (showTrackPage) => set({ showTrackPage }),
+      setShowTrackPage: (showTrackPage) => set(s => ({ showTrackPage, overlayOrder: [...s.overlayOrder.filter(k => k !== 'track'), ...(showTrackPage ? ['track' as const] : [])] })),
       setShowQueue: (showQueue) => set({ showQueue }),
       // Fresh open (or close) — clears any drill history
-      setArtistPage: (artistPageUser) => set({ artistPageUser, artistHistory: [] }),
+      setArtistPage: (artistPageUser) => set(s => ({ artistPageUser, artistHistory: [], overlayOrder: [...s.overlayOrder.filter(k => k !== 'artist'), ...(artistPageUser ? ['artist' as const] : [])] })),
       // Drill deeper (following/followers) — remember where we were for Back
       drillArtist: (user) => set(s => (s.artistPageUser ? { artistPageUser: user, artistHistory: [...s.artistHistory, s.artistPageUser] } : { artistPageUser: user })),
       backArtist: () => set(s => { const h = [...s.artistHistory]; const prev = h.pop(); return { artistPageUser: prev ?? null, artistHistory: h } }),

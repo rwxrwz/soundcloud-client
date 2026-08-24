@@ -43,6 +43,30 @@ function MainApp() {
     })()
   }, [])
 
+  // Icon glow on/off: toggles the data-icon-glow attribute the CSS gates on.
+  const iconGlow = useSettings(s => s.iconGlow)
+  useEffect(() => {
+    if (iconGlow) document.documentElement.dataset.iconGlow = '1'
+    else delete document.documentElement.dataset.iconGlow
+  }, [iconGlow])
+
+  // Spotlight hover for all .icon-btn buttons: one delegated listener writes the
+  // cursor position (relative to the hovered button) into CSS vars the button's
+  // ::after radial-gradient reads. Marking a button only needs the `icon-btn`
+  // class — no per-button handler.
+  useEffect(() => {
+    if (!iconGlow) return  // no listener while the effect is off
+    const onMove = (e: globalThis.MouseEvent) => {
+      const btn = (e.target as HTMLElement | null)?.closest?.('.icon-btn') as HTMLElement | null
+      if (!btn) return
+      const r = btn.getBoundingClientRect()
+      btn.style.setProperty('--mx', `${e.clientX - r.left}px`)
+      btn.style.setProperty('--my', `${e.clientY - r.top}px`)
+    }
+    document.addEventListener('mousemove', onMove, { passive: true })
+    return () => document.removeEventListener('mousemove', onMove)
+  }, [iconGlow])
+
   if (!booted) return <div style={{ height: '100vh', background: '#080808' }} />
 
   return (

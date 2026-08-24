@@ -37,7 +37,8 @@ import { QueueFlyout } from '../components/QueueFlyout'
 
 export function Player() {
   const { clientId, oauthToken, user } = useProfile()
-  const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, selectedAlbum, showQueue, showSettings, setShowSettings, page } = useUI()
+  const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, selectedAlbum, overlayOrder, showQueue, showSettings, setShowSettings, page } = useUI()
+  const ovZ = (k: 'track' | 'artist' | 'album') => 50 + Math.max(0, overlayOrder.indexOf(k))
   const { accent, bgStyle, wallpaperPath, wallpaperBlur, theme, transparencyLevel, heroAnim, playerStyle, fsLiveBg, perfNoBlur, perfNoHeroAnim, perfMiniOpaque } = useSettings()
   const fsHome = playerStyle === 'fullscreen' && page === 'main'
   const isTransparent = theme === 'transparent'
@@ -308,9 +309,9 @@ export function Player() {
       <UpdateBanner />
 
       {/* Overlays */}
-      {showTrackPage && <TrackPage />}
-      {artistPageUser && <ArtistPage />}
-      {selectedAlbum && <AlbumPage />}
+      {showTrackPage && <TrackPage z={ovZ('track')} />}
+      {artistPageUser && <ArtistPage z={ovZ('artist')} />}
+      {selectedAlbum && <AlbumPage z={ovZ('album')} />}
       {showQueue && <QueuePanel />}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
       {page === 'main' && <QuickCustomize />}

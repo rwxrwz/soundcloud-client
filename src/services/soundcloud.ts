@@ -66,11 +66,16 @@ export interface SCPlaylist {
   tracks: SCTrack[]
   track_count: number
   duration: number
+  likes_count?: number
   permalink_url: string
   set_type?: string          // 'album' | 'ep' | 'single' | 'compilation' | 'playlist'
   is_album?: boolean
   release_date?: string | null
   published_at?: string | null
+  created_at?: string | null
+  genre?: string | null
+  description?: string | null
+  sharing?: string           // 'public' | 'private'
 }
 
 export interface SCCollection<T> {

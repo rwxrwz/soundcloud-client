@@ -1,6 +1,6 @@
 {
   "name": "soundcloud-player",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "description": "SoundCloud Desktop Player",
   "main": "out/main/main.js",
   "scripts": {

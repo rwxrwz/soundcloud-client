@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
-import { useProfile, useUI, useLyrics, useToast, useSettings } from '../store'
+import { useProfile, useUI, useLyrics, useToast, useSettings, usePlayer } from '../store'
 import { sc, SCTrack, SCPlaylist } from '../services/soundcloud'
 import { playlistCache, hydratingSet } from '../services/playlistCache'
 import { checkTracksLyrics } from '../services/lyrics'
@@ -11,7 +11,7 @@ import { MainPage } from './MainPage'
 import { SearchResults } from './SearchResults'
 import { encodePlaylist } from '../services/playlistShare'
 import { SegmentedTabs } from './SegmentedTabs'
-import { useT } from '../i18n'
+import { useT, timeAgo } from '../i18n'
 
 // Remembers each tab's scroll position so switching tabs (and coming back) doesn't
 // jump to the top. Module-level so it survives the per-page remount of the list DOM.
@@ -19,7 +19,10 @@ const scrollMemory = new Map<string, number>()
 
 export function TrackList() {
   const { likes, stream, playlists, likedPlaylists, setLikedPlaylists, releases, setReleases, setPlaylists, user, localPlaylists, removeLocalPlaylist } = useProfile()
-  const { page, selectedPlaylist, searchQuery, setSearch, setSelectedPlaylist, backFromPlaylist, trackOrder, setTrackOrder } = useUI()
+  const { page, selectedPlaylist, searchQuery, setSearch, setSelectedPlaylist, backFromPlaylist, trackOrder, setTrackOrder, setArtistPage, setPlaylistMenu } = useUI()
+  const shuffle = usePlayer(s => s.shuffle)
+  const currentTrackId = usePlayer(s => s.currentTrack?.id)
+  const isPlaying = usePlayer(s => s.isPlaying)
   const { show: showToast } = useToast()
   const [loadingReleases, setLoadingReleases] = useState(false)
   const [listKey, setListKey] = useState(0)
@@ -214,7 +217,13 @@ export function TrackList() {
   }
 
   const tracks = useMemo(() => {
-    let list = canSort && trackOrder === 'oldest' ? [...rawTracks].reverse() : rawTracks
+    // Likes arrive newest-first from SC; playlist tracks arrive in playlist order
+    // (newly added ones at the end = oldest-first), so the reverse rule is opposite.
+    const reversed = canSort && (
+      (page === 'playlist-detail' && trackOrder === 'newest') ||
+      (page !== 'playlist-detail' && trackOrder === 'oldest')
+    )
+    let list = reversed ? [...rawTracks].reverse() : rawTracks
     if (canFilter && playlistFilter.trim()) {
       const q = playlistFilter.toLowerCase()
       list = list.filter(tr =>
@@ -283,7 +292,7 @@ export function TrackList() {
             <button
               onClick={() => setShowImportPlaylist(true)}
               title={t('importPlaylist')}
-              className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-medium transition-all"
+              className="icon-btn flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-medium transition-all"
               style={{ color: 'rgba(255,255,255,0.7)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -294,7 +303,7 @@ export function TrackList() {
             <button
               onClick={() => setShowCreatePlaylist(true)}
               title={t('newPlaylist')}
-              className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-medium transition-all"
+              className="icon-btn flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-medium transition-all"
               style={{ color: '#fff', background: 'var(--accent)' }}
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -336,7 +345,7 @@ export function TrackList() {
       <div className="px-5 pt-5 pb-3 flex items-center gap-3 shrink-0">
         {page === 'playlist-detail' && (
           <button onClick={backFromPlaylist}
-            className="p-1.5 rounded-lg transition-all hover:bg-white/8"
+            className="icon-btn p-1.5 rounded-lg transition-all hover:bg-white/8"
             style={{ color: 'rgba(255,255,255,0.4)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.9)'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)'}
@@ -384,7 +393,7 @@ export function TrackList() {
               className={`w-full rounded-xl px-4 py-2 text-sm text-white focus:outline-none transition-all ${searchClosing ? 'search-out' : 'search-in'}`}
               style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(var(--accent-rgb),0.4)' }}
             />
-          ) : (
+          ) : page === 'playlist-detail' ? null : (
             <>
               <h1 className="text-xl font-bold text-white truncate">{title}</h1>
               <div className="flex items-center gap-2 mt-0.5">
@@ -407,7 +416,7 @@ export function TrackList() {
         {canFilter && !filterOpen && (
           <button
             onClick={() => { setFilterOpen(true); setTimeout(() => filterInputRef.current?.focus(), 0) }}
-            className="p-1.5 rounded-lg transition-all shrink-0"
+            className="icon-btn p-1.5 rounded-lg transition-all shrink-0"
             style={{ color: hasActiveFilter ? 'var(--accent)' : 'rgba(255,255,255,0.35)' }}
             onMouseEnter={e => { if (!hasActiveFilter) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)' }}
             onMouseLeave={e => { if (!hasActiveFilter) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)' }}
@@ -421,7 +430,7 @@ export function TrackList() {
         {canFilter && filterOpen && (
           <button
             onClick={closeSearch}
-            className="p-1.5 rounded-lg transition-all shrink-0"
+            className="icon-btn p-1.5 rounded-lg transition-all shrink-0"
             style={{ color: 'rgba(255,255,255,0.35)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)'}
@@ -438,7 +447,7 @@ export function TrackList() {
           <button
             onClick={toggleLikePlaylist}
             title={plLiked ? t('unlikePlaylistAction') : t('likePlaylistAction')}
-            className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
             style={{ color: plLiked ? 'var(--accent)' : 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
             onMouseEnter={e => { if (!plLiked) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = plLiked ? 'var(--accent)' : 'rgba(255,255,255,0.4)' }}
@@ -454,7 +463,7 @@ export function TrackList() {
           <button
             onClick={handleSharePlaylist}
             title={t('sharePlaylist')}
-            className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
             style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)'}
@@ -470,7 +479,7 @@ export function TrackList() {
           <button
             onClick={() => setShowDeletePlaylist(true)}
             title={t('deletePlaylist')}
-            className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
             style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#f87171'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)'}
@@ -486,7 +495,7 @@ export function TrackList() {
           <button
             onClick={handleScanLyrics}
             title={t('scanLyrics')}
-            className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
             style={{ color: scanning ? 'var(--accent)' : 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
             onMouseEnter={e => { if (!scanning) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)' }}
             onMouseLeave={e => { if (!scanning) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)' }}
@@ -517,7 +526,7 @@ export function TrackList() {
         <div className={`px-5 pb-2 flex items-center gap-2 shrink-0 flex-wrap ${searchClosing ? 'search-out' : 'search-in'}`}>
           <button
             onClick={() => setLyricsOnly(v => !v)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+            className="icon-btn flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
             style={{
               background: lyricsOnly ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.06)',
               color: lyricsOnly ? 'var(--accent)' : 'rgba(255,255,255,0.55)',
@@ -532,7 +541,7 @@ export function TrackList() {
           <button
             onClick={() => setDrmOnly(v => !v)}
             title={t('drmOnlyHint')}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+            className="icon-btn flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
             style={{
               background: drmOnly ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.06)',
               color: drmOnly ? 'var(--accent)' : 'rgba(255,255,255,0.55)',
@@ -574,6 +583,73 @@ export function TrackList() {
 
       {/* List */}
       <div ref={listScrollRef} onScroll={saveScroll} className="flex-1 overflow-y-auto px-3 pb-3">
+        {page === 'playlist-detail' && selectedPlaylist && (() => {
+          const cover = sc.formatArtwork(selectedPlaylist.artwork_url ?? selectedPlaylist.tracks?.[0]?.artwork_url ?? '', 't500x500')
+          const durMs = selectedPlaylist.duration || rawTracks.reduce((s, tr) => s + (tr.duration || 0), 0)
+          const mins = Math.round(durMs / 60000)
+          const dh = Math.floor(mins / 60), dm = mins % 60
+          const durStr = dh ? `${dh}${t('hShort')} ${dm}${t('mShort')}` : `${dm}${t('mShort')}`
+          const count = tracks.length || selectedPlaylist.track_count || 0
+          const likes = selectedPlaylist.likes_count
+          const typeMap: Record<string, string> = { album: t('typeAlbum'), ep: t('typeEP'), compilation: t('typeCompilation'), playlist: t('typePlaylist') }
+          const typeLabel = typeMap[selectedPlaylist.set_type ?? 'playlist'] ?? t('typePlaylist')
+          const dateStr = selectedPlaylist.created_at ?? selectedPlaylist.published_at ?? selectedPlaylist.release_date
+          const isPrivate = selectedPlaylist.sharing === 'private'
+          const genre = selectedPlaylist.genre?.trim()
+          const desc = selectedPlaylist.description?.trim()
+          // With shuffle on, start from a random track (not the first) so the mix
+          // begins immediately; nextTrack then keeps picking randomly.
+          const playAll = () => {
+            if (!tracks.length) return
+            const start = usePlayer.getState().shuffle ? tracks[Math.floor(Math.random() * tracks.length)] : tracks[0]
+            usePlayer.getState().setTrack(start, tracks)
+          }
+          const openMenu = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setPlaylistMenu({ x: e.clientX, y: e.clientY, playlist: selectedPlaylist }) }
+          // This playlist is "active" when the currently loaded track belongs to it.
+          // Then the button is a play/pause toggle (resume in place); otherwise it starts the playlist.
+          const activeHere = currentTrackId != null && tracks.some(tr => tr.id === currentTrackId)
+          const playingHere = activeHere && isPlaying
+          const onPlayClick = () => { if (activeHere) usePlayer.getState().setPlaying(!isPlaying); else playAll() }
+          return (
+            <div className="flex items-stretch gap-7 px-3 pt-3 pb-7 mb-2">
+              {cover
+                ? <img src={cover} alt="" onContextMenu={openMenu} className="w-52 h-52 rounded-2xl object-cover shrink-0 cursor-pointer" style={{ boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }} />
+                : <div onContextMenu={openMenu} className="w-52 h-52 rounded-2xl shrink-0 bg-white/5 flex items-center justify-center cursor-pointer"><svg className="w-16 h-16 text-white/20" fill="currentColor" viewBox="0 0 20 20"><path d="M18 3a1 1 0 00-1.196-.98l-8 1.6A1 1 0 008 4.6v7.28A3 3 0 1010 14V7.82l6-1.2v3.06A3 3 0 1018 12V3z"/></svg></div>}
+              <div className="min-w-0 flex-1 flex flex-col py-3">
+                <h1 onContextMenu={openMenu} className="text-3xl font-bold text-white leading-tight line-clamp-2 cursor-pointer">{title}</h1>
+                <div className="flex items-center gap-2 mt-1.5 min-w-0">
+                  {selectedPlaylist.user?.username && <button onClick={() => selectedPlaylist.user && setArtistPage(selectedPlaylist.user)} className="text-sm text-white/55 hover:text-white truncate transition-colors">{selectedPlaylist.user.username}</button>}
+                  {isPrivate && <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>{t('playlistPrivate')}</span>}
+                </div>
+                {desc && <p className="text-xs text-white/40 mt-2 line-clamp-2 leading-relaxed">{desc}</p>}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-auto pt-3 text-xs text-white/45">
+                  <span className="text-white/60">{typeLabel}</span>
+                  <span className="text-white/20">·</span>
+                  <span>{count} {t('tracksWord')}</span>
+                  {durMs > 0 && <><span className="text-white/20">·</span><span>{durStr}</span></>}
+                  {likes != null && likes > 0 && (<><span className="text-white/20">·</span><span className="inline-flex items-center gap-1"><svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.18L12 21z"/></svg>{likes.toLocaleString()}</span></>)}
+                  {dateStr && <><span className="text-white/20">·</span><span>{timeAgo(dateStr)}</span></>}
+                  {genre && <span className="shrink-0 px-2 py-0.5 rounded-full text-[11px]" style={{ background: 'rgba(var(--accent-rgb),0.14)', color: 'var(--accent)' }}>#{genre}</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 self-end shrink-0">
+                <button onClick={() => usePlayer.getState().toggleShuffle()} title={t('shuffle')}
+                  className="icon-btn relative p-2 rounded-lg transition-all active:scale-90"
+                  style={{ color: shuffle ? 'var(--accent)' : 'rgba(255,255,255,0.5)' }}>
+                  <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+                  {shuffle && <span className="absolute left-1/2 -translate-x-1/2 rounded-full" style={{ bottom: 1, width: 3, height: 3, background: 'var(--accent)' }} />}
+                </button>
+                <button onClick={onPlayClick} disabled={!tracks.length} title={playingHere ? t('pause') : t('play')}
+                  className="icon-btn w-[52px] h-[52px] rounded-full flex items-center justify-center shrink-0 transition-all hover:scale-105 active:scale-95 disabled:opacity-40"
+                  style={{ background: 'var(--accent)', boxShadow: '0 6px 22px rgba(var(--accent-rgb),0.5)' }}>
+                  {playingHere
+                    ? <svg className="w-6 h-6" viewBox="0 0 24 24" fill="#fff"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                    : <svg className="w-6 h-6 ml-0.5" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>}
+                </button>
+              </div>
+            </div>
+          )
+        })()}
         {page === 'search' ? (
           <SearchResults />
         ) : (page === 'releases' && loadingReleases && releases.length === 0) ? (
@@ -615,6 +691,7 @@ function VirtualTrackRows({ scrollRef, tracks, showDate, className }: {
   const OVERSCAN = 8
   const PROBE = 20
   const probeRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
   const [rowH, setRowH] = useState(0)
   const [range, setRange] = useState({ start: 0, end: PROBE })
 
@@ -632,8 +709,14 @@ function VirtualTrackRows({ scrollRef, tracks, showDate, className }: {
     const sc = scrollRef.current
     if (!sc || !rowH) return
     const update = () => {
-      const start = Math.max(0, Math.floor(sc.scrollTop / rowH) - OVERSCAN)
-      const end = Math.min(tracks.length, Math.ceil((sc.scrollTop + sc.clientHeight) / rowH) + OVERSCAN)
+      // Rows can start below a header (e.g. the playlist hero) inside the same
+      // scroller, so measure this list's offset within the scroll content and read
+      // the scroll position relative to it — otherwise rows shift by the header height.
+      const root = rootRef.current
+      const listTop = root ? root.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop : 0
+      const rel = Math.max(0, sc.scrollTop - listTop)
+      const start = Math.max(0, Math.floor(rel / rowH) - OVERSCAN)
+      const end = Math.min(tracks.length, Math.ceil((rel + sc.clientHeight) / rowH) + OVERSCAN)
       setRange(r => (r.start === start && r.end === end ? r : { start, end }))
     }
     update()
@@ -652,6 +735,7 @@ function VirtualTrackRows({ scrollRef, tracks, showDate, className }: {
 
   return (
     <div
+      ref={rootRef}
       className={className}
       style={{ paddingTop: range.start * rowH, paddingBottom: Math.max(0, (tracks.length - range.end) * rowH) }}
     >

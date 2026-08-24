@@ -44,7 +44,7 @@ export function SettingsPanel({ onClose }: Props) {
         style={{ width: 'min(880px, 94%)', height: 'min(86%, 640px)' }}
       >
         {/* Internal sidebar */}
-        <div className="w-48 shrink-0 flex flex-col border-r border-white/8 p-3" style={{ background: 'rgba(255,255,255,0.02)' }}>
+        <div className="w-48 shrink-0 flex flex-col border-r border-white/[0.045] p-3" style={{ background: 'rgba(255,255,255,0.02)' }}>
           <p className="px-2 pt-1 pb-3 text-xs font-semibold text-white/40 uppercase tracking-wider">{t('settings')}</p>
           <div className="space-y-0.5">
             {NAV.map(item => {
@@ -53,7 +53,7 @@ export function SettingsPanel({ onClose }: Props) {
                 <button
                   key={item.id}
                   onClick={() => setCat(item.id)}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all"
+                  className="icon-btn w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all"
                   style={{
                     background: active ? 'rgba(var(--accent-rgb),0.16)' : 'transparent',
                     color: active ? '#fff' : 'rgba(255,255,255,0.5)',
@@ -71,9 +71,9 @@ export function SettingsPanel({ onClose }: Props) {
 
         {/* Content */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/8 shrink-0">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.045] shrink-0">
             <span className="font-semibold text-sm text-white">{NAV.find(n => n.id === cat)?.label}</span>
-            <button onClick={requestClose} className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-all">
+            <button onClick={requestClose} className="icon-btn p-1.5 rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-all">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
               </svg>
@@ -133,7 +133,7 @@ function ProfileTab({ onClose }: { onClose: () => void }) {
 
       <button
         onClick={openProfile}
-        className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm text-white/70 hover:text-white transition-all"
+        className="icon-btn w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm text-white/70 hover:text-white transition-all"
         style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
       >
         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -145,7 +145,7 @@ function ProfileTab({ onClose }: { onClose: () => void }) {
       <Section title={t('account')}>
         <button
           onClick={() => { logout(); onClose() }}
-          className="w-full py-2 px-3 rounded-lg text-sm text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all text-left"
+          className="icon-btn w-full py-2 px-3 rounded-lg text-sm text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all text-left"
         >
           {t('signOut')}
         </button>
@@ -200,7 +200,7 @@ function AppearanceTab() {
             style={{ background: 'rgba(var(--accent-rgb),0.1)', border: '1px solid rgba(var(--accent-rgb),0.25)' }}>
             <span className="text-xs text-white/70">{t('restartNeeded')}</span>
             <button onClick={() => window.electronAPI?.restartApp?.()}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105 active:scale-95 shrink-0"
+              className="icon-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105 active:scale-95 shrink-0"
               style={{ background: 'var(--accent)', color: '#fff' }}>{t('restartNow')}</button>
           </div>
         )}
@@ -279,7 +279,7 @@ function AppearanceTab() {
 }
 
 function PlayerTab() {
-  const { theme, bgStyle, visualizerStyle, heroAnim, playerStyle, fsLayout, fsShowLyrics, fsLiveBg, fsBeatGlow, fsArtCrossfade, lyricsFontScale, setVisualizerStyle, setHeroAnim, setPlayerStyle, setFsLayout, setFsShowLyrics, setFsLiveBg, setFsBeatGlow, setFsArtCrossfade, setLyricsFontScale } = useSettings()
+  const { theme, bgStyle, visualizerStyle, heroAnim, playerStyle, fsLayout, fsShowLyrics, fsLiveBg, fsBeatGlow, fsArtCrossfade, lyricsFontScale, setVisualizerStyle, setHeroAnim, setPlayerStyle, setFsLayout, setFsShowLyrics, setFsLiveBg, setFsBeatGlow, setFsArtCrossfade, setLyricsFontScale, iconGlow, setIconGlow } = useSettings()
   const toggleLyrics = () => { const v = !fsShowLyrics; setFsShowLyrics(v); if (!v && fsLayout === 'stack') setFsLayout('side') }
   const t = useT()
   const psLabel: Record<PlayerStyle, string> = { default: t('psDefault'), fullscreen: t('psFullscreen') }
@@ -298,7 +298,7 @@ function PlayerTab() {
         </div>
 
         {playerStyle === 'fullscreen' && (
-          <div className="mt-3 pt-3 border-t border-white/8 space-y-1.5">
+          <div className="mt-3 pt-3 border-t border-white/[0.045] space-y-1.5">
             <div className="pb-1">
               <FsToggleRow label={t('fsShowLyrics')} active={fsShowLyrics} onClick={toggleLyrics} />
             </div>
@@ -366,6 +366,10 @@ function PlayerTab() {
         </div>
       </Collapsible>
       )}
+
+      <div className="px-1 pt-2">
+        <FsToggleRow label={t('iconGlow')} active={iconGlow} onClick={() => setIconGlow(!iconGlow)} />
+      </div>
     </>
   )
 }
@@ -413,19 +417,21 @@ function SoundTab() {
   return (
     <>
     <Section title={t('outputDevice')}>
-      <select
-        value={outputDeviceId}
-        onChange={e => setOutputDeviceId(e.target.value)}
-        className="w-full rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none transition-all"
-        style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
-      >
-        <option value="" style={{ background: '#1a1a22' }}>{t('systemDefault')}</option>
-        {devices.filter(d => d.deviceId && d.deviceId !== 'default').map((d, i) => (
-          <option key={d.deviceId} value={d.deviceId} style={{ background: '#1a1a22' }}>
-            {d.label || `${t('outputDevice')} ${i + 1}`}
-          </option>
-        ))}
-      </select>
+      <div className="icon-btn rounded-lg">
+        <select
+          value={outputDeviceId}
+          onChange={e => setOutputDeviceId(e.target.value)}
+          className="w-full rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none transition-all"
+          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+        >
+          <option value="" style={{ background: '#1a1a22' }}>{t('systemDefault')}</option>
+          {devices.filter(d => d.deviceId && d.deviceId !== 'default').map((d, i) => (
+            <option key={d.deviceId} value={d.deviceId} style={{ background: '#1a1a22' }}>
+              {d.label || `${t('outputDevice')} ${i + 1}`}
+            </option>
+          ))}
+        </select>
+      </div>
     </Section>
 
     <Section title={t('crossfade')}>
@@ -460,7 +466,7 @@ function SoundTab() {
                 <button
                   key={p.id}
                   onClick={() => applyEqPreset(p.gains, p.id)}
-                  className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all"
+                  className="icon-btn px-2.5 py-1 rounded-full text-[11px] font-medium transition-all"
                   style={{
                     background: active ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.05)',
                     border: `1px solid ${active ? 'rgba(var(--accent-rgb),0.5)' : 'rgba(255,255,255,0.08)'}`,
@@ -494,10 +500,10 @@ function SoundTab() {
 
       {/* Preset actions */}
       <div className="flex flex-wrap items-center gap-2 mt-4">
-        <button onClick={() => setNameModal({ mode: 'save', value: '' })} className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+        <button onClick={() => setNameModal({ mode: 'save', value: '' })} className="icon-btn px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
           + {t('eqSavePreset')}
         </button>
-        <button onClick={importPreset} className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+        <button onClick={importPreset} className="icon-btn px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
           {t('eqImportPreset')}
         </button>
         {activeCustom && (
@@ -515,7 +521,7 @@ function SoundTab() {
     {nameModal && (
       <div className="fixed inset-0 z-[60] flex items-center justify-center playlist-picker-backdrop" onClick={e => { if (e.target === e.currentTarget) setNameModal(null) }}>
         <div className="playlist-picker-panel glass-island rounded-2xl w-80 overflow-hidden">
-          <div className="px-4 py-3 border-b border-white/8">
+          <div className="px-4 py-3 border-b border-white/[0.045]">
             <p className="text-sm font-semibold text-white/90">{nameModal.mode === 'save' ? t('eqSavePreset') : t('rename')}</p>
           </div>
           <div className="p-4 flex flex-col gap-3">
@@ -530,8 +536,8 @@ function SoundTab() {
               onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
             />
             <div className="flex items-center gap-2">
-              <button onClick={() => setNameModal(null)} className="flex-1 py-2 rounded-xl text-sm font-medium text-white/60 hover:text-white/90 transition-all" style={{ background: 'rgba(255,255,255,0.06)' }}>{t('cancel')}</button>
-              <button onClick={submitName} disabled={!nameModal.value.trim()} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40" style={{ background: 'var(--accent)' }}>
+              <button onClick={() => setNameModal(null)} className="icon-btn flex-1 py-2 rounded-xl text-sm font-medium text-white/60 hover:text-white/90 transition-all" style={{ background: 'rgba(255,255,255,0.06)' }}>{t('cancel')}</button>
+              <button onClick={submitName} disabled={!nameModal.value.trim()} className="icon-btn flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40" style={{ background: 'var(--accent)' }}>
                 {nameModal.mode === 'save' ? t('eqSave') : t('rename')}
               </button>
             </div>
@@ -591,7 +597,7 @@ function SystemTab() {
             const active = startPage === val
             return (
               <button key={val} onClick={() => setStartPage(val)}
-                className="px-3 py-2 rounded-lg text-sm text-left transition-all"
+                className="icon-btn px-3 py-2 rounded-lg text-sm text-left transition-all"
                 style={{
                   background: active ? 'rgba(var(--accent-rgb),0.16)' : 'rgba(255,255,255,0.05)',
                   color: active ? '#fff' : 'rgba(255,255,255,0.6)',
@@ -756,10 +762,10 @@ function SettingsPresetsSection() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button onClick={() => setNameModal({ mode: 'save', value: '' })} className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+        <button onClick={() => setNameModal({ mode: 'save', value: '' })} className="icon-btn px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
           + {t('eqSavePreset')}
         </button>
-        <button onClick={importFromCode} className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+        <button onClick={importFromCode} className="icon-btn px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/70 hover:text-white transition-all" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
           {t('eqImportPreset')}
         </button>
       </div>
@@ -767,7 +773,7 @@ function SettingsPresetsSection() {
       {nameModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center playlist-picker-backdrop" onClick={e => { if (e.target === e.currentTarget) setNameModal(null) }}>
           <div className="playlist-picker-panel glass-island rounded-2xl w-80 overflow-hidden">
-            <div className="px-4 py-3 border-b border-white/8">
+            <div className="px-4 py-3 border-b border-white/[0.045]">
               <p className="text-sm font-semibold text-white/90">{nameModal.mode === 'save' ? t('eqSavePreset') : t('rename')}</p>
             </div>
             <div className="p-4 flex flex-col gap-3">
@@ -782,8 +788,8 @@ function SettingsPresetsSection() {
                 onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
               />
               <div className="flex items-center gap-2">
-                <button onClick={() => setNameModal(null)} className="flex-1 py-2 rounded-xl text-sm font-medium text-white/60 hover:text-white/90 transition-all" style={{ background: 'rgba(255,255,255,0.06)' }}>{t('cancel')}</button>
-                <button onClick={submitName} disabled={!nameModal.value.trim()} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40" style={{ background: 'var(--accent)' }}>
+                <button onClick={() => setNameModal(null)} className="icon-btn flex-1 py-2 rounded-xl text-sm font-medium text-white/60 hover:text-white/90 transition-all" style={{ background: 'rgba(255,255,255,0.06)' }}>{t('cancel')}</button>
+                <button onClick={submitName} disabled={!nameModal.value.trim()} className="icon-btn flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40" style={{ background: 'var(--accent)' }}>
                   {nameModal.mode === 'save' ? t('eqSave') : t('rename')}
                 </button>
               </div>
@@ -811,7 +817,7 @@ function LanguageTab() {
             <button
               key={val}
               onClick={() => setLang(val)}
-              className="relative flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl text-sm transition-all"
+              className="icon-btn relative flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl text-sm transition-all"
               style={{
                 background: active ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.05)',
                 color: active ? '#fff' : 'rgba(255,255,255,0.65)',
@@ -851,13 +857,13 @@ function InfoTab() {
   const repo = 'https://github.com/rwxrwz/soundcloud-client'
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="icon-btn no-ring rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
         <p className="text-sm text-white/85 leading-relaxed">{t('infoLine1')}</p>
         <p className="text-sm text-white/50 leading-relaxed mt-1">{t('infoLine2')}</p>
       </div>
       <button
         onClick={() => window.open(repo)}
-        className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm text-white/80 hover:text-white transition-all"
+        className="icon-btn w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm text-white/80 hover:text-white transition-all"
         style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
       >
         <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
@@ -873,7 +879,7 @@ function InfoTab() {
 
 function Stat({ value, label }: { value: number; label: string }) {
   return (
-    <div className="rounded-lg px-2 py-2.5 text-center" style={{ background: 'rgba(255,255,255,0.05)' }}>
+    <div className="icon-btn no-ring rounded-lg px-2 py-2.5 text-center" style={{ background: 'rgba(255,255,255,0.05)' }}>
       <p className="text-base font-bold text-white tabular-nums">{(value ?? 0).toLocaleString()}</p>
       <p className="text-[10px] text-white/40 mt-0.5 truncate">{label}</p>
     </div>
@@ -917,7 +923,7 @@ function ThemeCard({ theme, active, label, sub, onClick }: { theme: Theme; activ
   }[theme]
 
   return (
-    <button onClick={onClick} className="text-left rounded-xl p-3 transition-all"
+    <button onClick={onClick} className="icon-btn text-left rounded-xl p-3 transition-all"
       style={{
         background: 'rgba(255,255,255,0.03)',
         border: active ? '2px solid rgba(var(--accent-rgb),0.6)' : '1px solid rgba(255,255,255,0.08)',
@@ -978,13 +984,13 @@ function WallpaperSection({ active, wallpaperPath, onPick, onNone }: {
     <>
       <div className="flex items-center gap-2 mb-2">
         <button onClick={() => window.electronAPI?.openWallpapers?.()}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white transition-all"
+          className="icon-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white transition-all"
           style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
           <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
           {t('openFolder')}
         </button>
         <button onClick={load}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white transition-all"
+          className="icon-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white transition-all"
           style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
           <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v5h.582m15.356 2A8 8 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8 8 0 01-15.357-2m15.357 2H15"/></svg>
           {t('refreshList')}
@@ -1055,7 +1061,7 @@ function Collapsible({ title, children, defaultOpen = false, preview }: { title:
     <div>
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl transition-all text-left"
+        className="icon-btn w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl transition-all text-left"
         style={{ background: open ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)' }}
         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = open ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.03)' }}
@@ -1090,7 +1096,7 @@ function RadioBtn({ active, onClick, label, sub, disabled }: { active: boolean; 
     <button
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150
+      className={`icon-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150
         ${disabled ? 'opacity-35 cursor-not-allowed' : active ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
     >
       <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all
@@ -1189,7 +1195,7 @@ function VersionsTab() {
           <button
             onClick={() => doCheck(true)}
             disabled={checking}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white transition-all disabled:opacity-50 flex items-center gap-1.5"
+            className="icon-btn px-3 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white transition-all disabled:opacity-50 flex items-center gap-1.5"
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
           >
             {checking && <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
@@ -1198,7 +1204,7 @@ function VersionsTab() {
           {hasUpdate && (
             <button
               onClick={() => window.open(latest!.url)}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all"
+              className="icon-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all"
               style={{ background: 'var(--accent)' }}
             >
               {t('versionsUpdate')}
@@ -1208,7 +1214,7 @@ function VersionsTab() {
       </div>
 
       {/* Changelog — separated from the current-version card */}
-      <div className="pt-3 border-t border-white/8">
+      <div className="pt-3 border-t border-white/[0.045]">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35 mb-3">{t('versionsHistory')}</p>
         {sorted.length === 0 ? (
           <p className="text-sm text-white/40 py-6 text-center">{t('versionsEmpty')}</p>

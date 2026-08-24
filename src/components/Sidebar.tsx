@@ -131,7 +131,7 @@ export function Sidebar() {
                 data-active={active ? 'true' : undefined}
                 onClick={() => item.id === 'playlists' ? goToPlaylists() : setPage(item.id)}
                 title={compact ? t(item.key) : undefined}
-                className={`w-full flex items-center rounded-xl text-sm font-medium relative group ${compact ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}`}
+                className={`icon-btn w-full flex items-center rounded-xl text-sm font-medium relative group ${compact ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}`}
                 style={{
                   color: active ? '#fff' : 'rgba(255,255,255,0.45)',
                   transition: 'color 0.3s ease',
@@ -192,7 +192,7 @@ export function Sidebar() {
           <button
             onClick={() => setShowSettings(true)}
             title={compact ? t('settings') : undefined}
-            className={`flex items-center text-sm text-white/40 hover:text-white/80 transition-all duration-200 hover:bg-white/5 rounded-xl ${compact ? 'justify-center w-9 h-9' : 'flex-1 gap-2.5 px-3 py-2'}`}
+            className={`icon-btn flex items-center text-sm text-white/40 hover:text-white/80 transition-all duration-200 hover:bg-white/5 rounded-xl ${compact ? 'justify-center w-9 h-9' : 'flex-1 gap-2.5 px-3 py-2'}`}
           >
             <span className="relative shrink-0">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -212,7 +212,7 @@ export function Sidebar() {
             onClick={handleRefresh}
             disabled={syncing}
             title={t('refreshLibrary')}
-            className="flex items-center justify-center w-9 h-9 rounded-xl shrink-0 transition-all duration-200 hover:bg-white/5"
+            className="icon-btn flex items-center justify-center w-9 h-9 rounded-xl shrink-0 transition-all duration-200 hover:bg-white/5"
             style={{ color: syncing ? accentHex : 'rgba(255,255,255,0.4)' }}
             onMouseEnter={e => { if (!syncing) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)' }}
             onMouseLeave={e => { if (!syncing) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)' }}

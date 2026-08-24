@@ -138,7 +138,7 @@ export function FriendsPage() {
       {menu && (
         <div
           ref={menuRef}
-          className="fixed z-[200] py-1.5 rounded-xl"
+          className="fixed z-[200] px-1.5 py-1.5 rounded-xl"
           style={{
             top: menuPos.y, left: menuPos.x, minWidth: 210,
             background: 'rgba(20,20,26,0.97)',
@@ -149,7 +149,7 @@ export function FriendsPage() {
           }}
           onClick={e => e.stopPropagation()}
         >
-          <div className="px-3 pt-2.5 pb-2.5 mb-1 flex gap-2.5 items-center border-b border-white/8">
+          <div className="px-3 pt-2.5 pb-2.5 mb-1 flex gap-2.5 items-center border-b border-white/[0.04]">
             {av(menu.friend, '-t120x120')
               ? <img src={av(menu.friend, '-t120x120')} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
               : <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/60 shrink-0">{initials(menu.friend)}</div>}
@@ -162,7 +162,7 @@ export function FriendsPage() {
             <button
               key={i}
               onClick={() => { it.onClick(); setMenu(null) }}
-              className="w-full flex items-center gap-2.5 text-left px-3.5 py-1.5 text-sm text-white/75 hover:text-white transition-colors"
+              className="w-full flex items-center gap-2.5 text-left px-2.5 py-1.5 rounded-lg text-sm text-white/75 hover:text-white transition-colors"
               onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >

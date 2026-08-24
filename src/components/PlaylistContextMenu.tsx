@@ -177,7 +177,7 @@ export function PlaylistContextMenu() {
     menu = (
       <div
         ref={ref}
-        className="fixed z-[200] py-1.5 rounded-xl"
+        className="fixed z-[200] px-1.5 py-1.5 rounded-xl"
         style={{
           top: pos.y, left: pos.x, minWidth: 230,
           background: 'rgba(20,20,26,0.97)',
@@ -212,7 +212,7 @@ export function PlaylistContextMenu() {
           <button
             key={i}
             onClick={() => { it.onClick(); setPlaylistMenu(null) }}
-            className="w-full flex items-center gap-2.5 text-left px-3.5 py-1.5 text-sm text-white/75 hover:text-white transition-colors"
+            className="w-full flex items-center gap-2.5 text-left px-2.5 py-1.5 rounded-lg text-sm text-white/75 hover:text-white transition-colors"
             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >

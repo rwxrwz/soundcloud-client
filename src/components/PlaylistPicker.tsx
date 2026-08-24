@@ -87,7 +87,7 @@ export function PlaylistPicker() {
           </div>
           <button
             onClick={close}
-            className="w-6 h-6 rounded-full flex items-center justify-center ml-3 shrink-0"
+            className="icon-btn w-6 h-6 rounded-full flex items-center justify-center ml-3 shrink-0"
             style={{ background: 'rgba(255,255,255,0.08)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.14)'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'}

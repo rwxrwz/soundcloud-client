@@ -217,7 +217,7 @@ export function NowPlaying() {
             <button
               onClick={toggleLike}
               title={isLiked ? t('unlike') : t('like')}
-              className="p-1.5 rounded-lg transition-all duration-150 active:scale-90"
+              className="icon-btn p-1.5 rounded-lg transition-all duration-150 active:scale-90"
               style={{ color: isLiked ? accentHex : 'rgba(255,255,255,0.4)' }}
               onMouseEnter={e => { if (!isLiked) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)' }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = isLiked ? accentHex : 'rgba(255,255,255,0.4)' }}
@@ -230,7 +230,7 @@ export function NowPlaying() {
             <button
               onClick={() => setPlaylistPickerTrack(currentTrack)}
               title={t('addToPlaylist')}
-              className="p-1.5 rounded-lg transition-all duration-150 active:scale-90"
+              className="icon-btn p-1.5 rounded-lg transition-all duration-150 active:scale-90"
               style={{ color: 'rgba(255,255,255,0.4)' }}
               onMouseEnter={e => ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)')}
               onMouseLeave={e => ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)')}
@@ -318,7 +318,7 @@ export function NowPlaying() {
           <button
             onClick={openFullscreen}
             title={t('fullscreen')}
-            className="p-1.5 rounded-lg transition-all duration-150 active:scale-90"
+            className="icon-btn p-1.5 rounded-lg transition-all duration-150 active:scale-90"
             style={{ color: 'rgba(255,255,255,0.4)' }}
             onMouseEnter={e => ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)')}
             onMouseLeave={e => ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)')}
@@ -332,7 +332,7 @@ export function NowPlaying() {
           <button
             onClick={() => setShowQueue(!showQueue)}
             title={t('queue')}
-            className="p-1.5 rounded-lg transition-all duration-150 active:scale-90 relative"
+            className="icon-btn p-1.5 rounded-lg transition-all duration-150 active:scale-90 relative"
             style={{ color: showQueue ? accentHex : 'rgba(255,255,255,0.4)' }}
             onMouseEnter={e => !showQueue && ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)')}
             onMouseLeave={e => !showQueue && ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)')}
@@ -399,7 +399,7 @@ function CtrlBtn({ children, onClick, active, accent, title }: {
     <button
       onClick={onClick}
       title={title}
-      className="relative p-2 rounded-lg transition-all duration-150 active:scale-90"
+      className="icon-btn relative p-2 rounded-lg transition-all duration-150 active:scale-90"
       style={{ color: active ? (accent ?? 'var(--accent)') : 'rgba(255,255,255,0.4)' }}
       onMouseEnter={e => !active && ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)')}
       onMouseLeave={e => !active && ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)')}

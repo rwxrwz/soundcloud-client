@@ -61,7 +61,7 @@ export function QueueFlyout() {
                   ref={active ? activeRef : undefined}
                   onClick={() => { if (!active) setTrack(track, queue) }}
                   onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track }) }}
-                  className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left transition-colors"
+                  className="icon-btn w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left transition-colors"
                   style={{
                     background: active ? 'rgba(var(--accent-rgb),0.16)' : 'transparent',
                     opacity: i < queueIndex ? 0.5 : 1,
@@ -96,7 +96,7 @@ export function QueueFlyout() {
       <button
         onClick={() => (open ? close() : setOpen(true))}
         title={t('queue')}
-        className="w-11 h-11 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 hover:scale-105"
+        className="icon-btn w-11 h-11 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 hover:scale-105"
         style={{
           background: open ? 'var(--accent)' : (theme === 'transparent' ? 'rgba(20,20,26,0.35)' : 'rgba(20,20,26,0.9)'),
           backdropFilter: theme === 'transparent' && !open ? 'blur(12px)' : undefined,

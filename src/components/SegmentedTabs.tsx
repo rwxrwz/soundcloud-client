@@ -27,7 +27,7 @@ export function SegmentedTabs<T extends string>({ value, options, onChange, size
           key={val}
           ref={el => { refs.current[val] = el }}
           onClick={() => onChange(val)}
-          className={`relative z-10 rounded-lg font-medium transition-colors duration-200 ${pad}`}
+          className={`icon-btn relative z-10 rounded-lg font-medium transition-colors duration-200 ${pad}`}
           style={{ color: value === val ? '#fff' : 'rgba(255,255,255,0.5)' }}
         >
           {label}

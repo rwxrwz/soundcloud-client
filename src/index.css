@@ -148,6 +148,39 @@ canvas { display: block; }
 }
 [data-theme="transparent"] .glass-card:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22); }
 
+/* ── Icon button hover ────────────────────────────────────────
+   Reusable hover for buttons: an edge glow plus a soft spotlight that tracks the
+   cursor. Add the class `icon-btn` and nothing else — a single global mousemove
+   listener (App.tsx) writes the cursor position into --mx/--my on whichever
+   .icon-btn is under the pointer. The spotlight is a ::after radial-gradient at
+   z-index -1 inside an isolated stacking context, so it paints above the button's
+   own background but below its text/icon — no per-child z-index or span wrapper
+   needed. border-radius: inherit clips it to the button shape (round or pill).
+   The glow is a plain box-shadow on the button, layering over any inline bg. */
+.icon-btn { isolation: isolate; }
+/* Give a positioning context for the pseudo-elements, but don't override buttons
+   that are already absolutely/fixed positioned (close/back corners) — that moved them. */
+.icon-btn:not(.absolute):not(.fixed):not(.sticky) { position: relative; }
+/* ::after = cursor spotlight, ::before = edge glow. Both sit behind the content
+   (z-index -1 in an isolated context, clipped to the button shape) and share the
+   same fade: quick fade-in on hover (0.15s), slow graceful fade-out (0.55s). */
+.icon-btn::before, .icon-btn::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border-radius: inherit; opacity: 0; transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.icon-btn::after {
+  background: radial-gradient(circle 70px at var(--mx, 50%) var(--my, 50%), rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.07) 35%, rgba(255,255,255,0.02) 65%, transparent 100%);
+}
+.icon-btn::before {
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.20), 0 0 18px 3px rgba(255,255,255,0.13);
+}
+/* Non-interactive plates opt out of the edge ring, keeping only the spotlight. */
+.icon-btn.no-ring::before { content: none; }
+/* Gated behind the iconGlow setting (data-icon-glow on <html>). When the setting
+   is off the attribute is absent, so buttons stay exactly as they were. */
+[data-icon-glow] .icon-btn:hover::before,
+[data-icon-glow] .icon-btn:hover::after { opacity: 1; transition: opacity 0.15s ease; }
+
 /* ── Slider ───────────────────────────────────────────────── */
 .slider-wrap {
   position: relative;

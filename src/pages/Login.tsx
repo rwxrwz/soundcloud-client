@@ -129,7 +129,7 @@ export function Login() {
           <button
             onClick={handleLogin}
             disabled={loading}
-            className="w-full py-3 px-4 rounded-xl text-white font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.97] flex items-center justify-center gap-2 disabled:opacity-50"
+            className="icon-btn w-full py-3 px-4 rounded-xl text-white font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.97] flex items-center justify-center gap-2 disabled:opacity-50"
             style={{
               background: loading ? `${accentHex}99` : accentHex,
               boxShadow: `0 4px 24px rgba(var(--accent-rgb), 0.35)`

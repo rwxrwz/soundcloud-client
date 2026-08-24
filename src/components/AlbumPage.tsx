@@ -19,7 +19,7 @@ function releaseLabel(d?: string | null): string {
 // Dedicated album view (album = playlist with set_type album/ep). Opened as an
 // overlay via selectedAlbum; loads the full track list, shows release date,
 // genre, totals, and a playable track list.
-export function AlbumPage() {
+export function AlbumPage({ z = 50 }: { z?: number }) {
   const { selectedAlbum, setSelectedAlbum, setArtistPage, setContextMenu } = useUI()
   const { setTrack, currentTrack, isPlaying, setPlaying } = usePlayer()
   const { user, likedPlaylists, setLikedPlaylists } = useProfile()
@@ -81,7 +81,8 @@ export function AlbumPage() {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-end track-page-backdrop ${closing ? 'closing' : ''}`}
+      className={`fixed inset-0 flex items-end track-page-backdrop ${closing ? 'closing' : ''}`}
+      style={{ zIndex: z }}
       onClick={e => { if (e.target === e.currentTarget) close() }}
     >
       <div className={`w-full track-page-panel glass-island rounded-t-3xl flex flex-col overflow-hidden ${closing ? 'closing' : ''}`}
@@ -116,19 +117,19 @@ export function AlbumPage() {
               </div>
               <div className="flex items-center gap-3">
                 <button onClick={playAll} disabled={!tracks.length}
-                  className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold transition-all hover:scale-105 active:scale-95 disabled:opacity-40"
+                  className="icon-btn inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold transition-all hover:scale-105 active:scale-95 disabled:opacity-40"
                   style={{ background: 'var(--accent)', color: '#12101a' }}>
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                   {t('playAll')}
                 </button>
                 <button onClick={addToQueue} disabled={!tracks.length} title={t('addToQueue')}
-                  className="w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-40"
+                  className="icon-btn w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-40"
                   style={{ color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}>
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h13v-2H3v2zm0-5h10v-2H3v2zm0-7v2h13V6H3zm16 5v-3h-2v3h-3v2h3v3h2v-3h3v-2h-3z"/></svg>
                 </button>
                 {isForeign && (
                   <button onClick={toggleLike} title={isLiked ? t('unlikePlaylistAction') : t('likePlaylistAction')}
-                    className="w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                    className="icon-btn w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                     style={{ color: isLiked ? 'var(--accent)' : 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}>
                     <svg className="w-5 h-5" viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/>

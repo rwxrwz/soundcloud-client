@@ -49,12 +49,12 @@ export function HomePlayer() {
         <p className="text-sm text-white/40">{t('nothingPlaying')}</p>
         <div className="flex items-center gap-2.5">
           <button onClick={() => setPage('likes')}
-            className="px-5 py-2 rounded-full text-sm font-semibold text-white transition-all active:scale-95"
+            className="icon-btn px-5 py-2 rounded-full text-sm font-semibold text-white transition-all active:scale-95"
             style={{ background: 'var(--accent)', boxShadow: '0 4px 18px rgba(var(--accent-rgb),0.4)' }}>
             {t('browseLibrary')}
           </button>
           <button onClick={goToPlaylists}
-            className="px-5 py-2 rounded-full text-sm font-semibold text-white transition-all active:scale-95"
+            className="icon-btn px-5 py-2 rounded-full text-sm font-semibold text-white transition-all active:scale-95"
             style={{ background: 'var(--accent)', boxShadow: '0 4px 18px rgba(var(--accent-rgb),0.4)' }}>
             {t('browsePlaylists')}
           </button>

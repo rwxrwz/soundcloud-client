@@ -206,7 +206,7 @@ export function ContextMenu() {
     <>
     <div
       ref={ref}
-      className="fixed z-[200] py-1.5 rounded-xl"
+      className="fixed z-[200] px-1.5 py-1.5 rounded-xl"
       style={{
         top: pos.y, left: pos.x, minWidth: 190,
         maxHeight: 'calc(100vh - 16px)', overflowY: 'auto', overflowX: 'hidden',
@@ -221,7 +221,7 @@ export function ContextMenu() {
       onClick={e => e.stopPropagation()}
     >
       {/* Track info header */}
-      <div className="px-3 pt-2.5 pb-2.5 mb-1 flex gap-2.5 border-b border-white/8" style={{ minWidth: 248 }}>
+      <div className="px-3 pt-2.5 pb-2.5 mb-1 flex gap-2.5 border-b border-white/[0.04]" style={{ minWidth: 248 }}>
         <img
           src={sc.formatArtwork(track.artwork_url || track.user?.avatar_url, 't200x200')}
           alt="" className="w-11 h-11 rounded-lg object-cover bg-white/5 shrink-0"
@@ -244,7 +244,7 @@ export function ContextMenu() {
           <button
             key={i}
             onClick={e => { e.stopPropagation(); openDownloadSub(e.currentTarget) }}
-            className="w-full flex items-center justify-between gap-2.5 text-left px-3.5 py-1.5 text-sm text-white/75 hover:text-white transition-colors"
+            className="w-full flex items-center justify-between gap-2.5 text-left px-2.5 py-1.5 rounded-lg text-sm text-white/75 hover:text-white transition-colors"
             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
@@ -255,7 +255,7 @@ export function ContextMenu() {
           <button
             key={i}
             onClick={() => { it.onClick!(); setContextMenu(null) }}
-            className="w-full flex items-center gap-2.5 text-left px-3.5 py-1.5 text-sm text-white/75 hover:text-white transition-colors"
+            className="w-full flex items-center gap-2.5 text-left px-2.5 py-1.5 rounded-lg text-sm text-white/75 hover:text-white transition-colors"
             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
@@ -285,7 +285,7 @@ export function ContextMenu() {
           <button
             key={j}
             onClick={() => { s.onClick(); setContextMenu(null) }}
-            className="w-full flex items-center gap-2.5 text-left px-3.5 py-1.5 text-sm text-white/75 hover:text-white transition-colors"
+            className="w-full flex items-center gap-2.5 text-left px-2.5 py-1.5 rounded-lg text-sm text-white/75 hover:text-white transition-colors"
             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >

@@ -13,9 +13,9 @@ function fmt(n: number | undefined): string {
   return n.toString()
 }
 
-export function TrackPage() {
+export function TrackPage({ z = 50 }: { z?: number }) {
   const { currentTrack } = usePlayer()
-  const { setShowTrackPage, setContextMenu } = useUI()
+  const { setShowTrackPage, setContextMenu, setArtistPage } = useUI()
   const t = useT()
   const [track, setTrack] = useState<SCTrack | null>(null)
   const [comments, setComments] = useState<SCComment[]>([])
@@ -69,7 +69,8 @@ export function TrackPage() {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-end track-page-backdrop ${closing ? 'closing' : ''}`}
+      className={`fixed inset-0 flex items-end track-page-backdrop ${closing ? 'closing' : ''}`}
+      style={{ zIndex: z }}
       onClick={e => { if (e.target === e.currentTarget) close() }}
     >
       <div className={`w-full track-page-panel glass-island rounded-t-3xl flex flex-col overflow-hidden ${closing ? 'closing' : ''}`}
@@ -110,7 +111,9 @@ export function TrackPage() {
                 <p className="text-xl font-bold text-white leading-tight line-clamp-2">
                   {data?.title ?? '—'}
                 </p>
-                <p className="text-sm text-white/50 mt-1">{data?.user?.username}</p>
+                {data?.user
+                  ? <button onClick={() => setArtistPage(data.user)} className="text-sm text-white/50 hover:text-white transition-colors mt-1 text-left">{data.user.username}</button>
+                  : <p className="text-sm text-white/50 mt-1">{currentTrack?.user?.username}</p>}
               </div>
 
               {/* Stats */}
@@ -151,7 +154,7 @@ export function TrackPage() {
                   <button
                     onClick={() => window.open(genius.url)}
                     title={genius.exact ? t('openGenius') : t('searchGenius')}
-                    className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors"
+                    className="icon-btn flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors"
                     style={{ background: 'rgba(255,255,100,0.10)', color: 'rgba(255,255,140,0.85)', border: '1px solid rgba(255,255,100,0.22)' }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,100,0.18)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,100,0.10)')}
@@ -237,7 +240,7 @@ export function TrackPage() {
         {/* Close button */}
         <button
           onClick={close}
-          className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/15 transition-colors duration-150"
+          className="icon-btn absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/15 transition-colors duration-150"
         >
           <svg className="w-4 h-4 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <path d="M18 6L6 18M6 6l12 12" />
