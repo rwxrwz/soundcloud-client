@@ -92,6 +92,11 @@ interface UIState {
   openSettings: (tab?: string) => void
   contextMenu: { x: number; y: number; track: SCTrack } | null
   setContextMenu: (m: { x: number; y: number; track: SCTrack } | null) => void
+  /** App-wide confirmation. Lives here, not inside the asking component, because
+   *  menus unmount the moment they are clicked — the dialog has to outlive them. */
+  confirmAsk: { message: string; confirmLabel: string; resolve: (ok: boolean) => void } | null
+  askConfirm: (message: string, confirmLabel: string) => Promise<boolean>
+  answerConfirm: (ok: boolean) => void
   playlistMenu: { x: number; y: number; playlist: SCPlaylist } | null
   setPlaylistMenu: (m: { x: number; y: number; playlist: SCPlaylist } | null) => void
   artistMenu: { x: number; y: number; user: SCUser } | null
@@ -668,6 +673,15 @@ export const useUI = create<UIState>()(
       openSettings: (tab) => set({ showSettings: true, settingsTab: tab ?? null }),
       contextMenu: null,
       setContextMenu: (contextMenu) => set({ contextMenu }),
+      confirmAsk: null,
+      askConfirm: (message, confirmLabel) => new Promise<boolean>(resolve => {
+        set({ confirmAsk: { message, confirmLabel, resolve } })
+      }),
+      answerConfirm: (ok) => {
+        const pending = get().confirmAsk
+        set({ confirmAsk: null })
+        pending?.resolve(ok)
+      },
       playlistMenu: null,
       setPlaylistMenu: (playlistMenu) => set({ playlistMenu }),
       artistMenu: null,
@@ -718,7 +732,10 @@ export interface Toast {
 
 interface ToastState {
   toasts: Toast[]
-  show: (message: string, type?: ToastType) => void
+  /** Returns the toast id so long jobs can update it in place. `sticky` toasts
+   *  stay until dismissed — used for progress ("Converting 42%"). */
+  show: (message: string, type?: ToastType, sticky?: boolean) => number
+  update: (id: number, message: string, type?: ToastType) => void
   dismiss: (id: number) => void
 }
 
@@ -767,10 +784,14 @@ let _toastId = 0
 
 export const useToast = create<ToastState>((set) => ({
   toasts: [],
-  show: (message, type = 'info') => {
+  show: (message, type = 'info', sticky = false) => {
     const id = ++_toastId
     set(s => ({ toasts: [...s.toasts, { id, message, type }] }))
-    setTimeout(() => set(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), 3000)
+    if (!sticky) setTimeout(() => set(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), 3000)
+    return id
   },
+  update: (id, message, type) => set(s => ({
+    toasts: s.toasts.map(t => (t.id === id ? { ...t, message, type: type ?? t.type } : t)),
+  })),
   dismiss: (id) => set(s => ({ toasts: s.toasts.filter(t => t.id !== id) })),
 }))

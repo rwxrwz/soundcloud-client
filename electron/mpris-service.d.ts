@@ -30,6 +30,11 @@ declare module 'mpris-service' {
     canGoPrevious: boolean
     canSeek: boolean
     objectPath(subpath: string): string
+    // Meant to be overridden: MPRIS reads the Position property through it.
+    // Returns microseconds; the library's own default just returns 0.
+    getPosition(): number
+    // Raises the Seeked signal so clients resync their own position clock.
+    seeked(position: number): void
     on(event: string, listener: (...args: unknown[]) => void): Player
   }
 

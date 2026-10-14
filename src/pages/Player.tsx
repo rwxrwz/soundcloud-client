@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useProfile, useUI, useSettings, usePlayer, ACCENT_COLORS } from '../store'
 import { sc } from '../services/soundcloud'
+import { useT } from '../i18n'
 
 function hexToRgbArr(hex: string): [number, number, number] {
   if (hex.startsWith('rgb')) {
@@ -34,10 +35,12 @@ import { watchWindowActivity } from '../services/perf'
 import { HeroAnim } from '../components/HeroAnim'
 import { QuickCustomize } from '../components/QuickCustomize'
 import { QueueFlyout } from '../components/QueueFlyout'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 export function Player() {
   const { clientId, oauthToken, user } = useProfile()
-  const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, selectedAlbum, overlayOrder, showQueue, showSettings, setShowSettings, page } = useUI()
+  const { bgColor, artRgb, showTrackPage, setShowTrackPage, artistPageUser, selectedAlbum, overlayOrder, showQueue, showSettings, setShowSettings, page, confirmAsk, answerConfirm } = useUI()
+  const t = useT()
   const ovZ = (k: 'track' | 'artist' | 'album') => 50 + Math.max(0, overlayOrder.indexOf(k))
   const { accent, bgStyle, wallpaperPath, wallpaperBlur, theme, transparencyLevel, heroAnim, playerStyle, fsLiveBg, perfNoBlur, perfNoHeroAnim, perfMiniOpaque } = useSettings()
   const fsHome = playerStyle === 'fullscreen' && page === 'main'
@@ -102,6 +105,9 @@ export function Player() {
       else if (action.type === 'prev') store.prevTrack()
       else if (action.type === 'play-pause') store.setPlaying(action.payload as boolean)
       else if (action.type === 'volume') store.setVolume(action.payload as number)
+      // Seek from MPRIS (desktop widget / playerctl). Goes through seekTo, i.e. the
+      // same optimistic path the in-app slider uses, in seconds.
+      else if (action.type === 'seek') store.seekTo(action.payload as number)
     })
   }, [])
 
@@ -321,6 +327,17 @@ export function Player() {
       <PlaylistContextMenu />
       <ArtistContextMenu />
       <AlbumContextMenu />
+
+      {/* App-wide confirmation — lives here so it survives the menu that asked */}
+      {confirmAsk && (
+        <ConfirmDialog
+          message={confirmAsk.message}
+          confirmLabel={confirmAsk.confirmLabel}
+          cancelLabel={t('cancel')}
+          onConfirm={() => answerConfirm(true)}
+          onCancel={() => answerConfirm(false)}
+        />
+      )}
     </div>
   )
 }

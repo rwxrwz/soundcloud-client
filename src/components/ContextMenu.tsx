@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { usePlayer, useProfile, useUI, useToast } from '../store'
 import { sc } from '../services/soundcloud'
 import { findGeniusLink, geniusSearchUrl, type GeniusLink } from '../services/genius'
+import { estimateMp3Seconds, transcodeIntoJob } from '../services/mp3Encode'
 import { useT } from '../i18n'
 
 function fmt(n?: number) {
@@ -110,27 +111,99 @@ export function ContextMenu() {
     }
   }
 
-  // Download: resolve the same (progressive) stream URL playback uses, then let
-  // main fetch + save it. 'folder' -> userData/downloads, 'dialog' -> Save As.
-  const download = async (mode: 'folder' | 'dialog') => {
+  // Download. Two formats:
+  //   'original' — whatever SoundCloud serves, saved untouched. That is .m4a for
+  //                HLS tracks and .mp3 for the rare plain ones. Fast, lossless.
+  //   'mp3'      — a real MP3. HLS sources have to be re-encoded, which takes a
+  //                while; plain sources are already MP3 and are just saved.
+  // `mode` picks the destination: the downloads folder or a save dialog.
+  const download = async (mode: 'folder' | 'dialog', format: 'original' | 'mp3') => {
     const clean = (s: string) => s.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim()
-    const name = `${clean(track.user?.username ?? 'Unknown')} - ${clean(track.title ?? 'track')}`.slice(0, 180) + '.mp3'
-    showToast(t('dlStarted'), 'info')
+    const name = `${clean(track.user?.username ?? 'Unknown')} - ${clean(track.title ?? 'track')}`.slice(0, 180)
+    const api = window.electronAPI
+    const toast = useToast.getState()
+    const ui = useUI.getState()
+    // One sticky toast carries the whole job: downloading, converting, done.
+    const toastId = toast.show(t('dlStarted'), 'info', true)
+    let job: { id: number; dest: string } | null = null
     try {
-      const url = await sc.getStreamUrl(track)
-      const saved = await window.electronAPI?.downloadTrack?.(mode, url, name)
-      if (saved) showToast(t('dlDone'), 'success')
+      const { url, kind } = await sc.getStreamUrl(track)
+      // 'original' keeps whatever SoundCloud serves: fMP4 fragments make an .m4a,
+      // a plain stream is already .mp3.
+      const exts = format === 'mp3' ? ['mp3'] : [kind === 'hls' ? 'm4a' : 'mp3']
+
+      job = (await api?.dlOpen?.(mode, name, exts)) ?? null
+      if (!job) { toast.dismiss(toastId); return }   // save dialog cancelled
+
+      // Only an HLS source saved as .mp3 needs the encoder; MP3 into MP3 would
+      // just throw away quality for nothing.
+      const transcode = kind === 'hls' && job.dest.toLowerCase().endsWith('.mp3')
+
+      if (transcode) {
+        const est = estimateMp3Seconds((track.duration ?? 0) / 1000)
+        if (est > 60) {
+          const human = est >= 60
+            ? t('dlMinutes').replace('{n}', String(Math.round(est / 60)))
+            : t('dlSeconds').replace('{n}', String(est))
+          const msg = t('dlLongWarn')
+            .replace('{dur}', sc.formatDuration(track.duration ?? 0))
+            .replace('{est}', human)
+          if (!await ui.askConfirm(msg, t('dlLongConfirm'))) {
+            await api!.dlClose!(job.id, false)
+            toast.dismiss(toastId)
+            return
+          }
+        }
+        await transcodeIntoJob(job.id, url, f => {
+          toast.update(toastId, `${t('dlConverting')} ${Math.round(f * 100)}%`)
+        })
+      } else {
+        await api!.dlFill!(job.id, url, kind)
+      }
+
+      await api!.dlClose!(job.id, true)
+      toast.dismiss(toastId)
+      toast.show(t('dlDone'), 'success')
     } catch (e) {
-      const msg = (e as Error)?.message
-      showToast(msg === 'DRM' || msg === 'NO_STREAM' ? t('dlUnavailable') : t('dlFailed'), 'error')
+      if (job) await api?.dlClose?.(job.id, false).catch(() => {})
+      toast.dismiss(toastId)
+      // Errors raised in main arrive wrapped ("Error invoking remote method ..."),
+      // so match loosely — NO_STREAM can come from either side now.
+      const msg = (e as Error)?.message ?? ''
+      const unavailable = msg === 'DRM' || msg.includes('NO_STREAM')
+      showToast(unavailable ? t('dlUnavailable') : t('dlFailed'), 'error')
     }
   }
 
-  // The three actions inside the Download submenu.
+  // The Download submenu. Every combination is spelled out: each format once for
+  // the downloads folder and once with a location picker. Hiding the destination
+  // behind a single "save as" row meant you could pick a format or a place, but
+  // never both without guessing.
+  const dlArrow = <IcoStroke><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></IcoStroke>
+  const dlPlace = <IcoStroke><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></IcoStroke>
   const downloadSub = [
-    { label: t('ctxDownloadHere'), icon: <IcoStroke><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></IcoStroke>, onClick: () => { download('folder') } },
-    { label: t('ctxDownloadAs'), icon: <IcoStroke><path d="M12 3v10m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></IcoStroke>, onClick: () => { download('dialog') } },
-    { label: t('ctxOpenDownloads'), icon: <IcoStroke><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></IcoStroke>, onClick: () => { window.electronAPI?.openDownloads?.() } },
+    {
+      label: t('ctxDlOriginal'), sub: t('ctxDlOriginalSub'), icon: dlArrow,
+      onClick: () => { download('folder', 'original') },
+    },
+    {
+      label: t('ctxDlOriginalAs'), icon: dlPlace,
+      onClick: () => { download('dialog', 'original') },
+    },
+    {
+      label: t('ctxDlMp3'), sub: t('ctxDlMp3Sub'),
+      icon: <IcoStroke><path d="M4 12a8 8 0 0113.7-5.7M20 12a8 8 0 01-13.7 5.7M17 3v4h-4M7 21v-4h4"/></IcoStroke>,
+      onClick: () => { download('folder', 'mp3') },
+    },
+    {
+      label: t('ctxDlMp3As'), icon: dlPlace,
+      onClick: () => { download('dialog', 'mp3') },
+    },
+    {
+      label: t('ctxOpenDownloads'), sep: true,
+      icon: <IcoStroke><path d="M4 4h6l2 2h8v12H4z"/><path d="M8 13h8"/></IcoStroke>,
+      onClick: () => { window.electronAPI?.openDownloads?.() },
+    },
   ]
 
   // Open the Download submenu next to its row (flips left near the screen edge).
@@ -139,7 +212,8 @@ export function ContextMenu() {
     const openLeft = r.right + 200 > window.innerWidth
     setSub({
       x: openLeft ? Math.max(8, r.left - 196) : r.right - 2,
-      y: Math.min(r.top - 6, window.innerHeight - 132),
+      // Tall enough for five rows plus the separator, so it never hangs off-screen
+      y: Math.max(8, Math.min(r.top - 6, window.innerHeight - 212)),
     })
   }
 
@@ -282,16 +356,23 @@ export function ContextMenu() {
         onClick={e => e.stopPropagation()}
       >
         {downloadSub.map((s, j) => (
+          <div key={j}>
+          {s.sep && <div className="h-px bg-white/[0.06] mx-2 my-1" />}
           <button
-            key={j}
             onClick={() => { s.onClick(); setContextMenu(null) }}
             className="w-full flex items-center gap-2.5 text-left px-2.5 py-1.5 rounded-lg text-sm text-white/75 hover:text-white transition-colors"
             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
             <span className="shrink-0 text-white/50">{s.icon}</span>
-            {s.label}
+            {s.sub ? (
+              <span className="min-w-0">
+                {s.label}
+                <span className="block text-[11px] text-white/35 leading-tight">{s.sub}</span>
+              </span>
+            ) : s.label}
           </button>
+          </div>
         ))}
       </div>,
       document.body

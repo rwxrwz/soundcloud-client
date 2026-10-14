@@ -3,6 +3,7 @@ import { usePlayer, useToast, useSettings, useLyrics, EQ_BANDS } from '../store'
 import { sc } from '../services/soundcloud'
 import { translate } from '../i18n'
 import { fetchLyrics } from '../services/lyrics'
+import { attachStream, detachStream } from '../services/hlsStream'
 import { audioBus } from './audioBus'
 
 // Two-channel audio engine. With crossfade off, only channel 0 is ever used and
@@ -25,6 +26,8 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
   const pauseTimers = useRef<(ReturnType<typeof setTimeout> | null)[]>([null, null]) // per-channel deferred pause
   const loadSeqRef = useRef(0)     // guards against out-of-order async track loads
   const loadingRef = useRef(false) // a new track is loading; the load owns starting playback
+  const seekTargetRef = useRef<number | null>(null)                    // seek in flight: where we asked to go
+  const seekGuardRef = useRef<ReturnType<typeof setTimeout> | null>(null) // safety net for that guard
 
   const { currentTrack, isPlaying, volume, setProgress, setDuration, nextTrack, repeat, seekRequest } = usePlayer()
   const { show: showToast } = useToast()
@@ -96,6 +99,15 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
     const onTimeUpdate = (e: Event) => {
       if (e.target !== activeEl()) return
       const a = activeEl()
+      // A seek is still in flight. On HLS the element keeps reporting the OLD
+      // position while hls.js flushes its buffer and fetches the target segment,
+      // so letting these through would yank the slider back to where the track
+      // used to be. Swallow them until the element really arrives.
+      const target = seekTargetRef.current
+      if (target !== null) {
+        if (a.seeking || Math.abs(a.currentTime - target) > 0.5) return
+        seekTargetRef.current = null
+      }
       setProgress(a.currentTime)
       // Start the crossfade a little before the track ends by advancing early
       const cf = useSettings.getState().crossfade
@@ -109,6 +121,15 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
       }
     }
     const onLoaded = (e: Event) => { if (e.target === activeEl()) setDuration((e.target as HTMLAudioElement).duration) }
+    // The element reached the requested position — stop swallowing updates and
+    // publish the real time. This is the normal end of a seek; the timeout in
+    // seek() only matters if 'seeked' never arrives.
+    const onSeeked = (e: Event) => {
+      if (e.target !== activeEl()) return
+      seekTargetRef.current = null
+      if (seekGuardRef.current) { clearTimeout(seekGuardRef.current); seekGuardRef.current = null }
+      setProgress((e.target as HTMLAudioElement).currentTime)
+    }
     const onEnded = (e: Event) => {
       if (e.target !== activeEl()) return          // an old crossfade tail finished — ignore
       if (earlyRef.current) { earlyRef.current = false; return }
@@ -120,14 +141,26 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
     els.forEach(a => {
       a.addEventListener('timeupdate', onTimeUpdate)
       a.addEventListener('loadedmetadata', onLoaded)
+      a.addEventListener('seeked', onSeeked)
       a.addEventListener('ended', onEnded)
     })
     return () => els.forEach(a => {
       a.removeEventListener('timeupdate', onTimeUpdate)
       a.removeEventListener('loadedmetadata', onLoaded)
+      a.removeEventListener('seeked', onSeeked)
       a.removeEventListener('ended', onEnded)
     })
   }, [repeat, nextTrack, setProgress, setDuration])
+
+  // Tear down hls.js instances when the player goes away. Deliberately a separate
+  // effect with no deps: the listener effect above re-runs on repeat/queue changes
+  // and must not kill a playing stream.
+  useEffect(() => () => {
+    elemsRef.current.forEach((el, i) => {
+      try { el.pause() } catch {}
+      detachStream(i, el)
+    })
+  }, [])
 
   // Load new track
   useEffect(() => {
@@ -178,11 +211,29 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
     // active) element — otherwise the old track blips out before the load swaps in
     // the new channel (audible especially with crossfade after a pause).
     loadingRef.current = true
+    // A pending seek belongs to the outgoing track — drop it, or it would swallow
+    // the new track's position updates.
+    seekTargetRef.current = null
+    if (seekGuardRef.current) { clearTimeout(seekGuardRef.current); seekGuardRef.current = null }
 
-    sc.getStreamUrl(currentTrack).then((url: string) => {
+    // A fatal hls.js error after playback has started (expired segment URLs, dead
+    // network): stop and say why instead of going quietly silent.
+    const onHlsFatal = () => {
+      if (myLoad !== loadSeqRef.current) return
+      const reason = translate('errPlay')
+      console.error('hls.js fatal error, track:', currentTrack?.title)
+      usePlayer.setState({ playbackError: reason })
+      usePlayer.getState().setPlaying(false)
+      useToast.getState().show(`${currentTrack.title}: ${reason.toLowerCase()}`, 'error')
+    }
+
+    sc.getStreamUrl(currentTrack).then(async (stream) => {
       if (myLoad !== loadSeqRef.current) return  // superseded by a newer track change
-      el.src = url
-      el.load()
+      // progressive -> plain src + load(); hls -> hls.js feeds the element through
+      // MediaSource. Awaiting readiness here (MANIFEST_PARSED for HLS) keeps the
+      // crossfade ramps below in sync with the moment the track can really start.
+      await attachStream(targetCh, el, stream, onHlsFatal)
+      if (myLoad !== loadSeqRef.current) return  // superseded while the stream was loading
       el.volume = usePlayer.getState().volume
 
       if (!ctxRef.current) ctxRef.current = new AudioContext()
@@ -223,7 +274,12 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
         pauseTimers.current[oldCh] = setTimeout(() => {
           pauseTimers.current[oldCh] = null
           // Only pause if this channel wasn't re-adopted as the active track meanwhile.
-          if (activeRef.current !== oldCh) { try { oldEl.pause(); oldEl.currentTime = 0 } catch {} }
+          if (activeRef.current !== oldCh) {
+            try { oldEl.pause(); oldEl.currentTime = 0 } catch {}
+            // Crossfade is over: drop this channel's hls.js instance so it stops
+            // downloading segments for a track nobody can hear any more.
+            detachStream(oldCh, oldEl)
+          }
         }, cf * 1000 + 150)
       } else {
         chs[targetCh]?.gain.cancelScheduledValues(now)
@@ -233,6 +289,8 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
         chs[other]?.gain.cancelScheduledValues(now)
         chs[other]?.gain.setValueAtTime(0.0001, now)
         try { elemsRef.current[other]?.pause() } catch {}
+        // No crossfade, so the idle channel is done for good — free its instance.
+        detachStream(other, elemsRef.current[other])
         if (playing) el.play().catch(handlePlayErr)
       }
 
@@ -311,19 +369,33 @@ export function useAudio(analyserRef: React.MutableRefObject<AnalyserNode | null
     if (ctx && ctx.setSinkId) ctx.setSinkId(outputDeviceId || '').catch(() => {})
   }, [outputDeviceId])
 
-  // seekRequest from store (keyboard shortcuts, etc.)
-  useEffect(() => {
-    if (seekRequest === null) return
-    const a = activeEl()
-    if (a) a.currentTime = seekRequest
-    // Reset so the same target can be requested again later
-    usePlayer.setState({ seekRequest: null })
-  }, [seekRequest])
-
+  // Optimistic seek: publish the requested position to the store immediately, so
+  // the slider stays exactly where the user clicked, and let onTimeUpdate/onSeeked
+  // swallow the element's stale positions until it catches up. Without this the
+  // thumb snapped back to the old spot for as long as the HLS seek took.
   const seek = useCallback((time: number) => {
     const a = activeEl()
-    if (a) a.currentTime = time
-  }, [])
+    if (!a) return
+    seekTargetRef.current = time
+    setProgress(time)
+    try { a.currentTime = time } catch { /* element not ready yet */ }
+    if (seekGuardRef.current) clearTimeout(seekGuardRef.current)
+    // If 'seeked' never arrives (dead segment, stalled network), don't stay blind
+    seekGuardRef.current = setTimeout(() => {
+      seekTargetRef.current = null
+      seekGuardRef.current = null
+    }, 5000)
+  }, [setProgress])
+
+  // seekRequest from store (keyboard shortcuts, lyrics lines, bridge commands).
+  // Lives below seek() on purpose — it is the same path, so it gets the same
+  // optimistic behaviour instead of poking currentTime on its own.
+  useEffect(() => {
+    if (seekRequest === null) return
+    seek(seekRequest)
+    // Reset so the same target can be requested again later
+    usePlayer.setState({ seekRequest: null })
+  }, [seekRequest, seek])
 
   return { seek }
 }

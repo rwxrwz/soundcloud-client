@@ -74,7 +74,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listWallpapers: () => ipcRenderer.invoke('wallpapers-list') as Promise<{ name: string; path: string }[]>,
 
   // Track downloads (userData/downloads or a "Save as" dialog)
-  downloadTrack: (mode: 'folder' | 'dialog', url: string, filename: string) =>
-    ipcRenderer.invoke('download-track', mode, url, filename) as Promise<string | null>,
   openDownloads: () => ipcRenderer.invoke('downloads-open'),
+
+  // Downloads: open a destination (filename without extension), fill it either
+  // from the stream (dlFill) or with bytes the window made (dlWrite), then close.
+  dlOpen: (mode: 'folder' | 'dialog', filename: string, exts: string[]) =>
+    ipcRenderer.invoke('dl-open', mode, filename, exts) as Promise<{ id: number; dest: string } | null>,
+  dlFill: (id: number, url: string, kind: 'progressive' | 'hls') =>
+    ipcRenderer.invoke('dl-fill', id, url, kind) as Promise<void>,
+  dlWrite: (id: number, bytes: Uint8Array) =>
+    ipcRenderer.invoke('dl-write', id, bytes) as Promise<void>,
+  dlClose: (id: number, ok: boolean) =>
+    ipcRenderer.invoke('dl-close', id, ok) as Promise<string | null>,
 })

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, screen, safeStorage, protocol, dialog } from 'electron'
 import { join, relative, isAbsolute } from 'path'
-import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync, readdirSync } from 'fs'
+import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync, readdirSync, createWriteStream } from 'fs'
+import type { WriteStream } from 'fs'
 import { startBridge, stopBridge, bridgeSetState, bridgeProgress, bridgeAudio, bridgeSpectrum, type BridgeState } from './bridge'
 // Type-only import: erased at build time so it never becomes a top-level require.
 // mpris-service (and its call-bind/dunder-proto dep cluster) is Linux-only and is
@@ -23,6 +24,8 @@ let lastPlayerState: unknown = null
 let scProxy: BrowserWindow | null = null
 // Linux MPRIS now-playing/controls source (null on other platforms)
 let mprisPlayer: ReturnType<typeof Mpris> | null = null
+// Last position (seconds) reported to MPRIS — used to spot jumps worth announcing
+let mprisLastPos = 0
 // In-flight DataDome captcha solve (shared across concurrent writes)
 let captchaPromise: Promise<void> | null = null
 
@@ -262,6 +265,25 @@ function sendPlayerCommand(type: string, payload?: unknown): void {
   }
 }
 
+// MPRIS track ids are D-Bus object paths, so the SoundCloud id has to be sanitised.
+// Built in one place because SetPosition hands the id back and we compare it.
+function mprisTrackPath(id: number | string): string {
+  if (!mprisPlayer) return ''
+  return mprisPlayer.objectPath('track/' + (String(id).replace(/[^A-Za-z0-9_]/g, '_') || '0'))
+}
+
+// Clamp inside the track, ask the renderer to seek, and raise Seeked right away:
+// MPRIS clients don't poll Position, they read it once and run their own clock, so
+// without the signal they keep counting from the old spot.
+function applyMprisSeek(seconds: number): void {
+  const st = lastPlayerState as MprisState | null
+  const dur = st?.duration || 0
+  const target = Math.max(0, dur > 0 ? Math.min(seconds, dur) : seconds)
+  sendPlayerCommand('seek', target)
+  mprisLastPos = target
+  try { mprisPlayer?.seeked(Math.round(target * 1e6)) } catch { /* client went away */ }
+}
+
 function setupMpris(): void {
   if (process.platform !== 'linux' || mprisPlayer) return
   try {
@@ -292,6 +314,37 @@ function setupMpris(): void {
       const vol = Math.max(0, Math.min(1, Number(v)))
       if (!Number.isNaN(vol)) sendPlayerCommand('volume', vol)
     })
+
+    // Position is exposed through getPosition(); the library's default returns 0,
+    // which is why every widget showed 00:00 no matter where the track really was.
+    // progress in the player state is SECONDS, MPRIS wants microseconds.
+    mprisPlayer.canSeek = true
+    mprisPlayer.getPosition = () => {
+      const st = lastPlayerState as MprisState | null
+      return Math.max(0, Math.round((st?.progress ?? 0) * 1e6))
+    }
+
+    // Seek(offset): relative, microseconds, may be negative.
+    mprisPlayer.on('seek', (offset: unknown) => {
+      const st = lastPlayerState as MprisState | null
+      if (!st?.currentTrack) return
+      const delta = Number(offset) / 1e6
+      if (Number.isNaN(delta)) return
+      applyMprisSeek((st.progress || 0) + delta)
+    })
+
+    // SetPosition(trackId, position): absolute, microseconds. Per spec the request
+    // is ignored when the id isn't the track playing right now — otherwise a stale
+    // click from a widget would seek whatever started in the meantime.
+    mprisPlayer.on('position', (ev: unknown) => {
+      const e = ev as { trackId?: string; position?: number } | null
+      const st = lastPlayerState as MprisState | null
+      if (!e || !st?.currentTrack) return
+      if (e.trackId && e.trackId !== mprisTrackPath(st.currentTrack.id)) return
+      const pos = Number(e.position) / 1e6
+      if (Number.isNaN(pos)) return
+      applyMprisSeek(pos)
+    })
   } catch (e) {
     console.error('[mpris] setup failed:', e)
     mprisPlayer = null
@@ -304,11 +357,19 @@ function updateMpris(state: MprisState): void {
     const t = state.currentTrack
     mprisPlayer.playbackStatus = t ? (state.isPlaying ? 'Playing' : 'Paused') : 'Stopped'
     if (typeof state.volume === 'number') mprisPlayer.volume = state.volume
+
+    // A jump that the client didn't ask for (seek inside the app, track change)
+    // has to be announced, or clients keep running their clock from the old spot.
+    const pos = state.progress || 0
+    if (Math.abs(pos - mprisLastPos) > 1.5) {
+      try { mprisPlayer.seeked(Math.max(0, Math.round(pos * 1e6))) } catch { /* no clients */ }
+    }
+    mprisLastPos = pos
+
     if (t) {
-      const idStr = String(t.id).replace(/[^A-Za-z0-9_]/g, '_') || '0'
       // progress/duration in the store are SECONDS; MPRIS wants microseconds.
       mprisPlayer.metadata = {
-        'mpris:trackid': mprisPlayer.objectPath('track/' + idStr),
+        'mpris:trackid': mprisTrackPath(t.id),
         'mpris:length': Math.max(0, Math.round((state.duration || 0) * 1e6)),
         'mpris:artUrl': t.artwork_url ? t.artwork_url.replace(/-large\./, '-t200x200.') : '',
         'xesam:title': t.title || '',
@@ -551,22 +612,102 @@ const downloadsDir = () => {
   return dir
 }
 ipcMain.handle('downloads-open', () => shell.openPath(downloadsDir()))
-ipcMain.handle('download-track', async (event, mode: 'folder' | 'dialog', url: string, filename: string) => {
+
+// One stalled connection must not hang a download forever.
+const DL_TIMEOUT_MS = 30000
+const dlFetch = (url: string) => fetch(url, { signal: AbortSignal.timeout(DL_TIMEOUT_MS) })
+
+const writeChunk = (out: WriteStream, buf: Buffer) => new Promise<void>((resolve, reject) => {
+  out.write(buf, err => (err ? reject(err) : resolve()))
+})
+
+// Writing an HLS track to an open stream. HLS is a playlist plus dozens of
+// fragments, but the fragments are fragmented MP4: the init header followed by
+// every fragment, byte for byte, is already a valid .m4a. No transcoding and no
+// ffmpeg involved. Fragments go to disk as they arrive, so even a long mix never
+// sits in memory.
+async function writeHls(playlistUrl: string, out: WriteStream): Promise<void> {
+  const res = await dlFetch(playlistUrl)
+  if (!res.ok) throw new Error('HTTP ' + res.status)
+  const text = await res.text()
+
+  // Without an init header the fragments aren't fMP4 (MP3-in-HLS variants) and
+  // stitching them this way would produce junk — report it as unavailable instead.
+  const init = text.match(/#EXT-X-MAP:URI="([^"]+)"/)?.[1]
+  const segments = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'))
+  if (!init || !segments.length) throw new Error('NO_STREAM')
+
+  for (const part of [init, ...segments]) {
+    const r = await dlFetch(new URL(part, playlistUrl).toString())
+    if (!r.ok) throw new Error('HTTP ' + r.status)
+    await writeChunk(out, Buffer.from(await r.arrayBuffer()))
+  }
+}
+
+// Every download goes through one job: open a destination, fill it (either here
+// from the stream, or from the window when it transcodes to MP3), then close.
+// Keeping it in one place means the save dialog, the partial-file cleanup and the
+// extension logic exist once instead of per format.
+interface DlJob { stream: WriteStream; dest: string }
+const dlJobs = new Map<number, DlJob>()
+let dlSeq = 0
+
+// `exts` may hold more than one option: the save dialog then shows a file-type
+// picker, and the chosen extension decides the format (dest comes back to the
+// renderer so it can see which one won).
+ipcMain.handle('dl-open', async (event, mode: 'folder' | 'dialog', filename: string, exts: string[]) => {
   if (!isTrustedSender(event)) throw new Error('untrusted sender')
-  let dest = join(downloadsDir(), filename)
+  let dest = join(downloadsDir(), `${filename}.${exts[0]}`)
   if (mode === 'dialog') {
     const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow ?? undefined
     const r = await dialog.showSaveDialog(win!, {
       defaultPath: dest,
-      filters: [{ name: 'Audio', extensions: ['mp3'] }],
+      filters: exts.map(e => ({ name: e.toUpperCase(), extensions: [e] })),
     })
     if (r.canceled || !r.filePath) return null
     dest = r.filePath
   }
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('HTTP ' + res.status)
-  writeFileSync(dest, Buffer.from(await res.arrayBuffer()))
-  return dest
+  const id = ++dlSeq
+  dlJobs.set(id, { stream: createWriteStream(dest), dest })
+  return { id, dest }
+})
+
+// Fill a job straight from SoundCloud, unchanged: plain MP3 in one go, HLS glued
+// from its fragments.
+ipcMain.handle('dl-fill', async (event, id: number, url: string, kind: 'progressive' | 'hls') => {
+  if (!isTrustedSender(event)) throw new Error('untrusted sender')
+  const job = dlJobs.get(id)
+  if (!job) throw new Error('unknown download job')
+  if (kind === 'hls') {
+    await writeHls(url, job.stream)
+  } else {
+    const res = await dlFetch(url)
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    await writeChunk(job.stream, Buffer.from(await res.arrayBuffer()))
+  }
+})
+
+// Used when the window produces the bytes itself (MP3 transcoding).
+ipcMain.handle('dl-write', async (event, id: number, bytes: Uint8Array) => {
+  if (!isTrustedSender(event)) throw new Error('untrusted sender')
+  const job = dlJobs.get(id)
+  if (!job) throw new Error('unknown download job')
+  await writeChunk(job.stream, Buffer.from(bytes))
+})
+
+ipcMain.handle('dl-close', async (event, id: number, ok: boolean) => {
+  if (!isTrustedSender(event)) throw new Error('untrusted sender')
+  const job = dlJobs.get(id)
+  if (!job) return null
+  dlJobs.delete(id)
+  if (ok) {
+    await new Promise<void>(resolve => job.stream.end(resolve))
+    return job.dest
+  }
+  // Cancelled or failed — don't leave a partial file behind
+  job.stream.destroy()
+  try { unlinkSync(job.dest) } catch { /* nothing written */ }
+  return null
 })
 
 // ── App version / GitHub releases (update check) ────────────────────────────

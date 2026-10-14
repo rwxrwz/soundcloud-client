@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { sc } from '../services/soundcloud'
+import { attachStream, detachStream, SLOT_EGG } from '../services/hlsStream'
 import { usePlayer } from '../store'
 import circleUrl from '../assets/egg/egg-circle.png'
 import fanUrl from '../assets/egg/egg-fan-o.png'
@@ -64,14 +65,15 @@ export function SixSevenEgg() {
     let cancelled = false
     sc.resolveTrack(EGG_TRACK_URL)
       .then((track) => sc.getStreamUrl(track))
-      .then((url) => {
+      .then((stream) => {
         if (cancelled) return
-        audio.src = url
+        // Listener first: for progressive, attachStream calls load() right away and
+        // loadedmetadata could otherwise fire before we subscribe.
         audio.addEventListener('loadedmetadata', () => {
           try { audio.currentTime = EGG_START_SEC } catch { /* ignore */ }
           audio.play().catch(() => { /* autoplay/stream issue: animation still runs */ })
         }, { once: true })
-        audio.load()
+        return attachStream(SLOT_EGG, audio, stream)
       })
       .catch(() => { /* resolve/stream failed: run the animation without audio */ })
 
@@ -79,7 +81,9 @@ export function SixSevenEgg() {
       cancelled = true
       window.clearTimeout(timer)
       window.removeEventListener('keydown', onKey)
-      try { audio.pause(); audio.src = '' } catch { /* ignore */ }
+      try { audio.pause() } catch { /* ignore */ }
+      detachStream(SLOT_EGG, audio)   // kills the hls.js instance if the egg track is HLS
+      try { audio.src = '' } catch { /* ignore */ }
       if (wasPlaying) usePlayer.getState().setPlaying(true)
     }
   }, [shown])

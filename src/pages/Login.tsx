@@ -42,8 +42,11 @@ declare global {
       wallpapersDir: () => Promise<string>
       openWallpapers: () => Promise<void>
       listWallpapers: () => Promise<{ name: string; path: string }[]>
-      downloadTrack: (mode: 'folder' | 'dialog', url: string, filename: string) => Promise<string | null>
       openDownloads: () => Promise<void>
+      dlOpen: (mode: 'folder' | 'dialog', filename: string, exts: string[]) => Promise<{ id: number; dest: string } | null>
+      dlFill: (id: number, url: string, kind: 'progressive' | 'hls') => Promise<void>
+      dlWrite: (id: number, bytes: Uint8Array) => Promise<void>
+      dlClose: (id: number, ok: boolean) => Promise<string | null>
     }
   }
 }

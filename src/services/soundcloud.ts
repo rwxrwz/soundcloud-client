@@ -58,6 +58,15 @@ interface SCTranscoding {
   format: { protocol: string; mime_type: string }
 }
 
+// What getStreamUrl hands back. 'progressive' = plain MP3 straight into <audio>,
+// 'hls' = m3u8 playlist that has to go through hls.js + MediaSource.
+export type StreamKind = 'progressive' | 'hls'
+
+export interface ResolvedStream {
+  url: string
+  kind: StreamKind
+}
+
 export interface SCPlaylist {
   id: number
   title: string
@@ -252,7 +261,25 @@ class SoundCloudService {
     return ts.length === 0 && !track.stream_url
   }
 
-  async getStreamUrl(track: SCTrack): Promise<string> {
+  // Ask SoundCloud for the real media URL behind a transcoding entry. Playable
+  // entries answer with { url }; ones the current credentials can't open answer
+  // with an empty object (seen on the `abr_sq` variant with a public client_id).
+  // So "no url" means "try the next variant", not "give up".
+  private async resolveTranscoding(t: SCTranscoding): Promise<string | null> {
+    try {
+      const res = await this.get<{ url?: string }>(t.url.replace(API, ''))
+      return res?.url ?? null
+    } catch {
+      return null
+    }
+  }
+
+  // Resolve something the player can actually play, and say which kind it is.
+  // `progressive` is a plain MP3 that an <audio> element plays by itself;
+  // `hls` is an m3u8 playlist that needs hls.js + MediaSource (see hlsStream.ts).
+  // Since October 2026 SoundCloud dropped progressive for most tracks, so HLS is
+  // the normal path now and progressive is the lucky exception.
+  async getStreamUrl(track: SCTrack): Promise<ResolvedStream> {
     let transcodings = track.media?.transcodings ?? []
 
     // If transcodings missing, fetch full track to get them
@@ -263,22 +290,33 @@ class SoundCloudService {
       } catch {}
     }
 
-    // Only `progressive` (plain MP3) is directly playable in an <audio> element.
-    // Encrypted HLS variants (cbc/ctr/cenc) are DRM-protected and can't be played here.
-    const progressive = transcodings.find(t => t.format.protocol === 'progressive')
-    if (progressive) {
-      try {
-        const res = await this.get<{ url: string }>(progressive.url.replace(API, ''))
-        if (res.url) return res.url
-      } catch { /* fall through to fallback / error */ }
+    // Encrypted variants (cbc/ctr/cenc) need a DRM licence we don't have — skip them
+    // entirely, they are what makes this throw 'DRM' at the bottom.
+    const plain = transcodings.filter(t => !t.format.protocol.includes('encrypted'))
+
+    // 1. progressive — cheapest and most robust path, keep it first
+    for (const t of plain.filter(t => t.format.protocol === 'progressive')) {
+      const url = await this.resolveTranscoding(t)
+      if (url) return { url, kind: 'progressive' }
     }
 
-    // Legacy fallback
+    // 2. plain HLS. Preference: AAC 160k (fragmented MP4, feeds MediaSource with no
+    // repackaging) -> any other audio/mp4 variant -> whatever is left (MP3-in-HLS,
+    // which hls.js has to remux).
+    const rank = (t: SCTranscoding) =>
+      t.preset === 'aac_160k' ? 0 : t.format.mime_type.includes('audio/mp4') ? 1 : 2
+    const hls = plain.filter(t => t.format.protocol === 'hls').sort((a, b) => rank(a) - rank(b))
+    for (const t of hls) {
+      const url = await this.resolveTranscoding(t)
+      if (url) return { url, kind: 'hls' }
+    }
+
+    // 3. Legacy fallback
     if (track.stream_url) {
-      return `${track.stream_url}?client_id=${this.clientId}`
+      return { url: `${track.stream_url}?client_id=${this.clientId}`, kind: 'progressive' }
     }
 
-    // No plain stream resolved — track is DRM-protected (encrypted HLS only)
+    // Nothing resolved — DRM if encrypted variants exist, otherwise simply unavailable
     const hasEncrypted = transcodings.some(t => t.format.protocol.includes('encrypted'))
     throw new Error(hasEncrypted ? 'DRM' : 'NO_STREAM')
   }
