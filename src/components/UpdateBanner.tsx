@@ -14,13 +14,11 @@ export function UpdateBanner() {
 
   return (
     <div
-      className="absolute z-[70] top-11 left-1/2 -translate-x-1/2 flex items-center gap-3 pl-3.5 pr-2 py-2 rounded-full no-drag"
+      className="glass-panel absolute z-[70] top-11 left-1/2 -translate-x-1/2 flex items-center gap-3 pl-3.5 pr-2 py-2 rounded-full no-drag"
       style={{
-        background: 'rgba(20,20,26,0.92)',
+        // Accent outline marks it as a call to action; the surface itself is the
+        // same glass as every other floating thing.
         border: '1px solid rgba(var(--accent-rgb),0.4)',
-        boxShadow: '0 10px 34px rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
         animation: 'scale-in 0.2s ease',
       }}
     >

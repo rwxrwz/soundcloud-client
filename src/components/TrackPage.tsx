@@ -5,9 +5,10 @@ import type { SCComment, SCTrack } from '../services/soundcloud'
 import { findGeniusLink, type GeniusLink } from '../services/genius'
 import { TrackActions } from './TrackActions'
 import { useT, timeAgo } from '../i18n'
+import { useEscape } from '../hooks/useEscape'
 
 function fmt(n: number | undefined): string {
-  if (n === undefined || n === null) return '—'
+  if (n === undefined || n === null) return '-'
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return n.toString()
@@ -36,11 +37,8 @@ export function TrackPage({ z = 50 }: { z?: number }) {
     return () => { cancelled = true }
   }, [currentTrack?.id])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  // Only when this is the overlay on top - these stack.
+  useEscape(close)
 
   useEffect(() => {
     if (!currentTrack) return
@@ -91,7 +89,7 @@ export function TrackPage({ z = 50 }: { z?: number }) {
               className="shrink-0 rounded-2xl overflow-hidden bg-white/5"
               style={{
                 width: 200, height: 200,
-                boxShadow: '0 8px 40px rgba(0,0,0,0.6)',
+                boxShadow: 'var(--sh-2)',
               }}
             >
               {artwork ? (
@@ -109,7 +107,7 @@ export function TrackPage({ z = 50 }: { z?: number }) {
             <div className="flex-1 min-w-0 flex flex-col justify-center gap-3">
               <div>
                 <p className="text-xl font-bold text-white leading-tight line-clamp-2">
-                  {data?.title ?? '—'}
+                  {data?.title ?? '-'}
                 </p>
                 {data?.user
                   ? <button onClick={() => setArtistPage(data.user)} className="text-sm text-white/50 hover:text-white transition-colors mt-1 text-left">{data.user.username}</button>

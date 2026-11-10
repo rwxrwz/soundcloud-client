@@ -26,7 +26,7 @@ function MainApp() {
         const p = useProfile.getState()
         if (p.user) {
           if (p.oauthToken) {
-            // Legacy token from an older build — move it into the keychain and
+            // Legacy token from an older build - move it into the keychain and
             // re-persist so it drops out of localStorage.
             await window.electronAPI?.secureSetToken?.(p.oauthToken)
             useProfile.setState({ oauthToken: p.oauthToken })
@@ -53,7 +53,7 @@ function MainApp() {
   // Spotlight hover for all .icon-btn buttons: one delegated listener writes the
   // cursor position (relative to the hovered button) into CSS vars the button's
   // ::after radial-gradient reads. Marking a button only needs the `icon-btn`
-  // class — no per-button handler.
+  // class - no per-button handler.
   useEffect(() => {
     if (!iconGlow) return  // no listener while the effect is off
     const onMove = (e: globalThis.MouseEvent) => {

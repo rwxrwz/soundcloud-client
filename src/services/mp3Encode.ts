@@ -23,9 +23,18 @@ export function estimateMp3Seconds(durationSec: number): number {
   return Math.max(1, Math.round(durationSec / ENCODE_SPEED))
 }
 
+/* Budgets, because every request in here used to have none.
+   A playlist is a few hundred bytes and a fragment a few hundred kilobytes,
+   so neither has any business taking long - but a half-open socket on any
+   one of the dozens of fragments stalled the whole stitch with nothing
+   raised and nothing to show, which is what the net.ts chokepoint exists
+   to prevent. */
+const PLAYLIST_MS = 15_000
+const FRAGMENT_MS = 45_000
+
 /** Fetch an HLS playlist and glue its fragments into one buffer. */
-async function stitchHls(playlistUrl: string, onProgress: (f: number) => void): Promise<ArrayBuffer> {
-  const res = await fetch(playlistUrl)
+export async function stitchHls(playlistUrl: string, onProgress: (f: number) => void): Promise<ArrayBuffer> {
+  const res = await fetch(playlistUrl, { signal: AbortSignal.timeout(PLAYLIST_MS) })
   if (!res.ok) throw new Error('HTTP ' + res.status)
   const text = await res.text()
 
@@ -36,7 +45,7 @@ async function stitchHls(playlistUrl: string, onProgress: (f: number) => void): 
   const parts: ArrayBuffer[] = []
   const all = [init, ...segments]
   for (let i = 0; i < all.length; i++) {
-    const r = await fetch(new URL(all[i], playlistUrl).toString())
+    const r = await fetch(new URL(all[i], playlistUrl).toString(), { signal: AbortSignal.timeout(FRAGMENT_MS) })
     if (!r.ok) throw new Error('HTTP ' + r.status)
     parts.push(await r.arrayBuffer())
     onProgress((i + 1) / all.length)

@@ -1,13 +1,21 @@
 {
   "compilerOptions": {
     "composite": true,
+    "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
     "target": "ESNext",
     "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
-    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ]
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*",
+    "miniapp/**/*"
+  ]
 }

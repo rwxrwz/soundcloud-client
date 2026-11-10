@@ -39,7 +39,7 @@ let doneFrames = 0
 let lastReported = 0
 
 // Float samples (-1..1) to the signed 16-bit the encoder expects, with clipping
-// guarded — decoded audio can overshoot slightly.
+// guarded - decoded audio can overshoot slightly.
 function toInt16(src: Float32Array, out: Int16Array): void {
   for (let i = 0; i < src.length; i++) {
     const s = src[i] < -1 ? -1 : src[i] > 1 ? 1 : src[i]

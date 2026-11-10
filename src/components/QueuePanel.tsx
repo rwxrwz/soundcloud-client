@@ -1,11 +1,12 @@
-import { useRef, useState, useEffect } from 'react'
-import { usePlayer, useUI, useToast, useAccentHex } from '../store'
+import { useRef, useState } from 'react'
+import { usePlayer, useUI, useToast, useAccentHex, hexToRgb } from '../store'
 import { sc } from '../services/soundcloud'
 import { useT } from '../i18n'
 import type { SCTrack } from '../services/soundcloud'
+import { useEscape } from '../hooks/useEscape'
 
 export function QueuePanel() {
-  const { queue, queueIndex, currentTrack, setTrack, removeFromQueue, moveInQueue, clearQueue } = usePlayer()
+  const { queue, queueIndex, currentTrack, setTrack, removeFromQueue, moveInQueue, clearQueue, radioFrom } = usePlayer()
   const { setShowQueue } = useUI()
   const { show: showToast } = useToast()
   const t = useT()
@@ -13,14 +14,14 @@ export function QueuePanel() {
   const [closing, setClosing] = useState(false)
   const close = () => { if (closing) return; setClosing(true); setTimeout(() => setShowQueue(false), 300) }
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  // Only when this is the overlay on top - these stack.
+  useEscape(close)
 
   const upNext = queue.slice(queueIndex + 1)
-  const played = queue.slice(0, queueIndex)
+  /* Clamped, because queueIndex is -1 when the track playing is not in the
+     queue any more (it was removed from the top). slice(0, -1) would then
+     quietly drop the last row instead of showing an empty "played" list. */
+  const played = queue.slice(0, Math.max(0, queueIndex))
 
   // Drag & drop state
   const dragIndexRef = useRef<number | null>(null)
@@ -101,7 +102,10 @@ export function QueuePanel() {
                 onDrop={() => handleDrop(queueIndex)}
                 onDragEnd={handleDragEnd}
                 onPlay={() => setTrack(currentTrack, queue)}
-                onRemove={() => { showToast(`${t('toastRemoved')}: ${currentTrack.title}`, 'info'); removeFromQueue(queueIndex) }}
+                /* queueIndex < 0 means this track has already been taken
+                   out of the queue and is only still playing, so there is
+                   nothing left to remove. */
+                onRemove={queueIndex < 0 ? undefined : () => { showToast(`${t('toastRemoved')}: ${currentTrack.title}`, 'info'); removeFromQueue(queueIndex) }}
               />
             </Section>
           )}
@@ -112,8 +116,15 @@ export function QueuePanel() {
               {upNext.map((track, i) => {
                 const abs = queueIndex + 1 + i
                 return (
+                  <div key={`${track.id}-${abs}`}>
+                  {/* Past this line nobody chose anything: the player did. */}
+                  {radioFrom >= 0 && abs === radioFrom && (
+                    <div className="flex items-center gap-2 px-1 pt-2 pb-1">
+                      <span className="text-[9px] uppercase tracking-wider shrink-0" style={{ color: 'var(--accent)' }}>{t('qRadio')}</span>
+                      <span className="h-px flex-1" style={{ background: 'rgba(var(--accent-rgb),0.25)' }} />
+                    </div>
+                  )}
                   <TrackRow
-                    key={`${track.id}-${abs}`}
                     track={track}
                     absoluteIndex={abs}
                     accentHex={accentHex}
@@ -125,6 +136,7 @@ export function QueuePanel() {
                     onPlay={() => setTrack(track, queue)}
                     onRemove={() => { showToast(`${t('toastRemoved')}: ${track.title}`, 'info'); removeFromQueue(abs) }}
                   />
+                  </div>
                 )
               })}
             </Section>
@@ -196,7 +208,8 @@ function TrackRow({ track, isCurrent, faded, accentHex, dragOver, onDragStart, o
   onDrop: () => void
   onDragEnd: () => void
   onPlay: () => void
-  onRemove: () => void
+  /** Absent when the row is not in the queue and so cannot be removed. */
+  onRemove?: () => void
 }) {
   const [hovered, setHovered] = useState(false)
   const { setContextMenu } = useUI()
@@ -215,7 +228,7 @@ function TrackRow({ track, isCurrent, faded, accentHex, dragOver, onDragStart, o
       className="icon-btn flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 group"
       style={{
         background: isCurrent
-          ? `rgba(${hexToRgb(accentHex)}, 0.1)`
+          ? `rgba(${rgbTriplet(accentHex)}, 0.1)`
           : dragOver
           ? 'rgba(255,255,255,0.08)'
           : hovered
@@ -264,20 +277,22 @@ function TrackRow({ track, isCurrent, faded, accentHex, dragOver, onDragStart, o
         {sc.formatDuration(track.duration)}
       </span>
 
-      {/* Remove */}
-      <button
+      {/* Remove. Absent entirely when there is nothing to remove, rather
+          than a button that does nothing when it is clicked. */}
+      {onRemove && <button
         onClick={e => { e.stopPropagation(); onRemove() }}
         className="w-6 h-6 rounded-full flex items-center justify-center text-white/0 group-hover:text-white/35 hover:!text-white/80 hover:bg-white/8 transition-all shrink-0"
       >
         <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
           <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
         </svg>
-      </button>
+      </button>}
     </div>
   )
 }
 
-function hexToRgb(hex: string): string {
-  const h = hex.replace('#', '')
-  return `${parseInt(h.slice(0,2),16)}, ${parseInt(h.slice(2,4),16)}, ${parseInt(h.slice(4,6),16)}`
-}
+// The store's parser, which is the one gated by normalizeHex - these local
+// copies returned [NaN, NaN, NaN] for anything they could not read, and
+// `rgba(NaN,NaN,NaN,...)` is dropped by the CSS parser rather than falling
+// back to the accent.
+const rgbTriplet = (hex: string): string => hexToRgb(hex).join(', ')

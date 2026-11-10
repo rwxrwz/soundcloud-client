@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import logo from '../assets/logo.png'
-import { useProfile, useSettings, ACCENT_COLORS } from '../store'
+import { useProfile, useSettings, ACCENT_COLORS, resolveAccentHex } from '../store'
 import { sc } from '../services/soundcloud'
 import { useT } from '../i18n'
+import type { RemoteConfigView, RemoteStatusView, RemoteListRequest, RemoteListItem, MiniAppStatusView } from '../services/remoteTypes'
 
 declare global {
   interface Window {
@@ -21,14 +22,30 @@ declare global {
       onPlayerCommand: (cb: (action: { type: string; payload?: unknown }) => void) => (() => void)
       bridgeSendState: (state: unknown) => void
       bridgeSendProgress: (position: number, playing: boolean) => void
+      bridgeHasClients: () => Promise<boolean>
       bridgeSendAudio: (level: number, bass: number) => void
       bridgeSendSpectrum: (bars: number[]) => void
       onBridgeCommand: (cb: (cmd: { action: string; value?: number | boolean | string }) => void) => (() => void)
+      remoteGetConfig: () => Promise<RemoteConfigView | null>
+      remoteSetConfig: (patch: { enabled?: boolean; token?: string }) => Promise<boolean>
+      remoteApprove: (id: number) => Promise<boolean>
+      remoteRevoke: (id: number) => Promise<boolean>
+      onRemoteStatus: (cb: (s: RemoteStatusView) => void) => (() => void)
+      onRemotePair: (cb: (u: { id: number; name: string }) => void) => (() => void)
+      onRemoteLyricsRequest: (cb: (q: { id: number; trackId: number }) => void) => (() => void)
+      remoteLyricsReply: (r: { id: number; synced: { time: number; text: string }[] | null; plain: string | null; ai?: boolean }) => void
+      miniAppStatus: () => Promise<MiniAppStatusView | null>
+      onMiniAppStatus: (cb: (s: MiniAppStatusView) => void) => (() => void)
+      onMiniAppProgress: (cb: (p: { done: number; total: number }) => void) => (() => void)
+      onRemoteCommand: (cb: (cmd: { action: string; value?: number | boolean | string }) => void) => (() => void)
+      onRemoteListRequest: (cb: (q: RemoteListRequest) => void) => (() => void)
+      remoteListReply: (r: { id: number; items: RemoteListItem[]; total: number; title?: string }) => void
       scWrite: (method: string, url: string, body: unknown, oauthToken: string) => Promise<unknown>
       windowMinimize: () => Promise<void>
       windowMaximize: () => Promise<void>
       windowClose: () => Promise<void>
       setCloseToTray: (enabled: boolean) => Promise<void>
+      setDiscordRpc: (enabled: boolean) => Promise<void>
       setLoginItem: (enabled: boolean) => Promise<void>
       getLoginItem: () => Promise<boolean>
       setDatadomeBypass: (enabled: boolean) => Promise<void>
@@ -42,20 +59,49 @@ declare global {
       wallpapersDir: () => Promise<string>
       openWallpapers: () => Promise<void>
       listWallpapers: () => Promise<{ name: string; path: string }[]>
-      openDownloads: () => Promise<void>
+      openDownloads: () => Promise<string>
       dlOpen: (mode: 'folder' | 'dialog', filename: string, exts: string[]) => Promise<{ id: number; dest: string } | null>
       dlFill: (id: number, url: string, kind: 'progressive' | 'hls') => Promise<void>
       dlWrite: (id: number, bytes: Uint8Array) => Promise<void>
       dlClose: (id: number, ok: boolean) => Promise<string | null>
+      /* AI lyrics. No getter for the key on purpose - it is written into the
+         keychain and used only in the main process. */
+      geniusSetToken?: (token: string) => Promise<boolean>
+      geniusHasToken?: () => Promise<boolean>
+      geniusReady?: () => Promise<boolean>
+      geniusLibrary?: (names: string[]) => Promise<void>
+      geniusClearance?: () => Promise<boolean>
+      geniusFind?: (req: { title: string; artists: string[]; raw?: string }) => Promise<string | null>
+      geniusByUrl?: (req: { trackId: number; url: string }) => Promise<{ ok: true; html: string; url: string; cached: boolean } | { ok: false; reason: string; retryAt?: number }>
+      geniusPage?: (req: { trackId: number; title: string; artists: string[]; raw?: string }) => Promise<{ ok: true; html: string; url: string; cached: boolean } | { ok: false; reason: string; shared?: boolean; retryAt?: number }>
+      aiSetKey?: (key: string) => Promise<boolean>
+      aiHasKey?: () => Promise<boolean>
+      aiClearKey?: () => Promise<boolean>
+      lyricsForgetTrack?: (trackId: number) => Promise<number>
+      lyricsCachedIds?: () => Promise<number[]>
+      lyricsCacheStat?: () => Promise<{ files: number; bytes: number }>
+      lyricsCacheOpen?: () => Promise<boolean>
+      lyricsCacheClear?: () => Promise<number>
+      alignReady?: () => Promise<boolean>
+      alignFetch?: () => Promise<boolean>
+      alignInfo?: () => Promise<{ have: boolean; bytes: number; total: number; dir: string }>
+      alignCancel?: () => Promise<void>
+      alignRemove?: () => Promise<boolean>
+      alignOpenDir?: () => Promise<void>
+      alignRun?: (req: { trackId: number; pcm: Float32Array; lyrics: string[]; title?: string }) => Promise<{ lines: { time: number; text: string }[]; support: number; seconds: number }>
+      onAlignProgress?: (cb: (p: { done: number; total: number }) => void) => () => void
+      aiCached?: (trackId: number, model: string) => Promise<{ lines: { time: number; text: string }[]; plain: string; model: string; at: number; note?: string; fit?: number } | null>
+      aiTranscribe?: (req: { trackId: number; title: string; artist: string; durationSec: number; url: string; kind: 'progressive' | 'hls'; model?: string; force?: boolean; wav?: Uint8Array | null; wavMime?: string; lyrics?: string[] | null }) => Promise<{ lines: { time: number; text: string }[]; plain: string; model: string; at: number; note?: string; fit?: number }>
     }
   }
 }
 
 export function Login() {
   const { setAuth } = useProfile()
-  const { accent, theme } = useSettings()
+  const { accent, customAccent, theme } = useSettings()
   const t = useT()
-  const accentHex = ACCENT_COLORS[accent as keyof typeof ACCENT_COLORS] ?? ACCENT_COLORS.slate
+  // No artwork on the login screen, so 'artwork' resolves against a neutral seed.
+  const accentHex = accent === 'artwork' ? ACCENT_COLORS.slate : resolveAccentHex(accent, customAccent, [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [step, setStep] = useState('')

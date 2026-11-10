@@ -1,7 +1,7 @@
 import { usePlayer, useUI } from '../store'
 import { sc } from '../services/soundcloud'
 
-// Full-window living background for the fullscreen player style: blurred artwork
+// Full-window living background for the home screen: blurred artwork
 // with slow drift + accent blobs from the artwork's dominant colour + vignette.
 // Rendered at the Player root so it fills the whole window (behind the glass UI).
 export function FsLivingBg() {

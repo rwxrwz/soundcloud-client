@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { usePlayer, useSettings, useUI, ACCENT_COLORS } from '../store'
+import { usePlayer, useSettings, useUI, resolveAccentHex, hexToRgb } from '../store'
 import { skipFrame } from '../services/perf'
 
 interface Props {
@@ -10,23 +10,26 @@ export function Visualizer({ analyserRef }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const frameRef = useRef<number>(0)
   const fadeRef = useRef<number>(1)
+  const dataRef = useRef<Uint8Array<ArrayBuffer>>()
   const barsRef = useRef<Float32Array>()
   const smoothRef = useRef<Float32Array>()
-  const { isPlaying } = usePlayer()
-  const { visualizerStyle, accent } = useSettings()
-  const { artRgb } = useUI()
+  /* Selectors, not whole stores. A bare usePlayer() subscribes to every
+     write, and setProgress runs on every timeupdate - so this component
+     re-rendered about four times a second for as long as music played,
+     which is the exact thing the refs below were built to make unnecessary.
+     The same correction was already made in Player.tsx and ContextMenu. */
+  const isPlaying = usePlayer(s => s.isPlaying)
+  const accent = useSettings(s => s.accent)
+  const customAccent = useSettings(s => s.customAccent)
+  const artRgb = useUI(s => s.artRgb)
   const isPlayingRef = useRef(isPlaying)
-  const styleRef = useRef(visualizerStyle)
-  const accentRef = useRef(ACCENT_COLORS[accent as keyof typeof ACCENT_COLORS] ?? ACCENT_COLORS.orange)
+  const accentRef = useRef(resolveAccentHex(accent, customAccent, artRgb))
 
   useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying])
-  useEffect(() => { styleRef.current = visualizerStyle }, [visualizerStyle])
 
   useEffect(() => {
-    accentRef.current = accent === 'artwork'
-      ? `#${artRgb.map(v => v.toString(16).padStart(2,'0')).join('')}`
-      : (ACCENT_COLORS[accent as keyof typeof ACCENT_COLORS] ?? ACCENT_COLORS.orange)
-  }, [accent, artRgb])
+    accentRef.current = resolveAccentHex(accent, customAccent, artRgb)
+  }, [accent, customAccent, artRgb])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -47,7 +50,12 @@ export function Visualizer({ analyserRef }: Props) {
       if (playing && analyser) {
         fadeRef.current = 1
         const bufLen = analyser.frequencyBinCount
-        const data = new Uint8Array(bufLen)
+        // Reused, like the two below it: a fresh kilobyte thirty times a
+        // second, for as long as the app is open, bought nothing.
+        if (!dataRef.current || dataRef.current.length !== bufLen) {
+          dataRef.current = new Uint8Array(new ArrayBuffer(bufLen))
+        }
+        const data = dataRef.current
         analyser.getByteFrequencyData(data)
 
         if (!barsRef.current || barsRef.current.length !== bufLen) {
@@ -61,10 +69,10 @@ export function Visualizer({ analyserRef }: Props) {
           barsRef.current[i] = smoothRef.current![i]
         }
 
-        renderStyle(ctx, W, H, barsRef.current, 1, accentRef.current, styleRef.current)
+        renderBars(ctx, W, H, barsRef.current, 1, accentRef.current)
       } else if (fadeRef.current > 0.01 && barsRef.current) {
         fadeRef.current *= 0.92
-        renderStyle(ctx, W, H, barsRef.current, fadeRef.current, accentRef.current, styleRef.current)
+        renderBars(ctx, W, H, barsRef.current, fadeRef.current, accentRef.current)
       } else {
         fadeRef.current = 0
         ctx.beginPath()
@@ -82,70 +90,27 @@ export function Visualizer({ analyserRef }: Props) {
   return <canvas ref={canvasRef} width={220} height={40} style={{ opacity: 0.9 }} />
 }
 
-function hexToRgb(hex: string) {
-  const h = hex.replace('#', '')
-  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]
-}
-
-function renderStyle(
+function renderBars(
   ctx: CanvasRenderingContext2D,
   W: number, H: number,
   barHeights: Float32Array,
   alpha: number,
   accentHex: string,
-  style: string
 ) {
   const [r, g, b] = hexToRgb(accentHex)
   const n = barHeights.length
 
-  if (style === 'wave') {
-    ctx.beginPath()
-    ctx.strokeStyle = `rgba(${r},${g},${b},${0.9 * alpha})`
-    ctx.lineWidth = 2
-    ctx.lineJoin = 'round'
-    for (let i = 0; i < n; i++) {
-      const x = (i / n) * W
-      const y = H / 2 - (barHeights[i] / (H * 0.9)) * (H / 2)
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-    }
-    ctx.stroke()
-    ctx.beginPath()
-    ctx.strokeStyle = `rgba(${r},${g},${b},${0.35 * alpha})`
-    for (let i = 0; i < n; i++) {
-      const x = (i / n) * W
-      const y = H / 2 + (barHeights[i] / (H * 0.9)) * (H / 2)
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-    }
-    ctx.stroke()
-
-  } else if (style === 'mirror') {
-    const barW = (W / n) * 2.5
-    let x = 0
-    for (let i = 0; i < n; i++) {
-      const bh = barHeights[i] * 0.45
-      const g2 = ctx.createLinearGradient(0, H/2, 0, 0)
-      g2.addColorStop(0, `rgba(${r},${g},${b},${0.9 * alpha})`)
-      g2.addColorStop(1, `rgba(${Math.min(255,r+80)},${Math.min(255,g+40)},${Math.min(255,b+120)},${0.3 * alpha})`)
-      ctx.fillStyle = g2
-      ctx.beginPath(); ctx.roundRect(x, H/2 - bh, barW - 1, bh, 1); ctx.fill()
-      ctx.beginPath(); ctx.roundRect(x, H/2, barW - 1, bh, 1); ctx.fill()
-      x += barW + 1
-    }
-
-  } else {
-    // Default bars
-    const barW = (W / n) * 2.5
-    let x = 0
-    for (let i = 0; i < n; i++) {
-      const bh = barHeights[i]
-      if (bh < 0.5) { x += barW + 1; continue }
-      const grad = ctx.createLinearGradient(0, H, 0, H - bh)
-      grad.addColorStop(0, `rgba(${r},${g},${b},${0.95 * alpha})`)
-      grad.addColorStop(0.6, `rgba(${Math.min(255,r+60)},${Math.min(255,g+30)},${b},${0.7 * alpha})`)
-      grad.addColorStop(1, `rgba(${Math.min(255,r+80)},${Math.min(255,g+40)},${Math.min(255,b+120)},${0.4 * alpha})`)
-      ctx.fillStyle = grad
-      ctx.beginPath(); ctx.roundRect(x, H - bh, barW - 1, bh, 2); ctx.fill()
-      x += barW + 1
-    }
+  const barW = (W / n) * 2.5
+  let x = 0
+  for (let i = 0; i < n; i++) {
+    const bh = barHeights[i]
+    if (bh < 0.5) { x += barW + 1; continue }
+    const grad = ctx.createLinearGradient(0, H, 0, H - bh)
+    grad.addColorStop(0, `rgba(${r},${g},${b},${0.95 * alpha})`)
+    grad.addColorStop(0.6, `rgba(${Math.min(255,r+60)},${Math.min(255,g+30)},${b},${0.7 * alpha})`)
+    grad.addColorStop(1, `rgba(${Math.min(255,r+80)},${Math.min(255,g+40)},${Math.min(255,b+120)},${0.4 * alpha})`)
+    ctx.fillStyle = grad
+    ctx.beginPath(); ctx.roundRect(x, H - bh, barW - 1, bh, 2); ctx.fill()
+    x += barW + 1
   }
 }

@@ -1,0 +1,446 @@
+/* The Mini App's own sheet. Deliberately not the desktop stylesheet: that one
+   carries wallpapers, seasons, visualisers and an editing mode, none of which
+   a phone webview wants to download. What is shared is the language - the
+   accent variable, the glass, the roundness - not the file. */
+
+:root {
+  --accent: #ff5500;
+  --accent-rgb: 255, 85, 0;
+  --bg: #0b0a0e;
+  --card: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.1);
+  --dim: rgba(255, 255, 255, 0.45);
+  --faint: rgba(255, 255, 255, 0.25);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: #fff;
+  font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', Roboto, sans-serif;
+  overscroll-behavior: none;
+  /* The webview sits under Telegram's own header and the phone's gesture
+     bar; without these the controls end up underneath both. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  user-select: none;
+}
+
+/* touch-action: manipulation drops the double-tap-to-zoom gesture, and with
+   it the ~300ms the browser spends waiting to find out whether a tap was
+   the first half of one. Every control felt that delay. */
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; touch-action: manipulation; }
+
+/* Shared with the desktop Marquee component, which is imported as is. */
+.marquee-box { overflow: hidden; }
+.marquee-run { display: inline-block; white-space: nowrap; }
+
+/* ── shell ──────────────────────────────────────────────────────────── */
+
+/* `clip` rather than `hidden`: hidden still makes this a scroll container,
+   and anything that moves focus inside the sheet then scrolls the whole app
+   sideways to reveal it - which it did, by exactly the glow's overflow. */
+.app { position: relative; height: 100%; display: flex; flex-direction: column; overflow: clip; }
+
+/* The glow the player is known for, reduced to something a phone can hold:
+   one soft radial instead of a canvas, tinted by the live accent. */
+.glow {
+  /* Full width and no wider. Bleeding past the sides looked the same and
+     gave the layout 113px of phantom scroll on both ends. */
+  position: absolute; inset: -30% 0 auto 0; height: 70%;
+  background: radial-gradient(closest-side, rgba(var(--accent-rgb), 0.38), transparent 70%);
+  filter: blur(14px);
+  pointer-events: none;
+  transition: background 0.8s ease;
+}
+
+.bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px 4px; position: relative; z-index: 1;
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; flex: none; }
+.dot[data-off='true'] { background: #f59e0b; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+.who { font-size: 12px; color: var(--faint); flex: 1; min-width: 0; }
+
+.pill {
+  padding: 7px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: var(--card); border: 1px solid var(--line);
+}
+
+/* ── now playing ────────────────────────────────────────────────────── */
+
+.now {
+  flex: 1; min-height: 0; position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 8px 22px 22px; gap: 16px;
+}
+
+.art {
+  width: min(72vw, 300px); aspect-ratio: 1; border-radius: 22px;
+  background: var(--card); overflow: hidden; flex: none;
+  box-shadow: 0 18px 60px rgba(var(--accent-rgb), 0.3), 0 10px 30px rgba(0, 0, 0, 0.5);
+  transition: box-shadow 0.8s ease, transform 0.35s ease, opacity 0.18s ease;
+}
+.art[data-idle='true'] { transform: scale(0.94); }
+/* A skip is in flight. Dimming says the tap landed and something is on its
+   way, which is the whole difference between waiting and tapping again. */
+.now[data-waiting='true'] .art,
+.now[data-waiting='true'] .meta { opacity: 0.45; }
+.meta { transition: opacity 0.18s ease; }
+.art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.art .none { width: 100%; height: 100%; display: grid; place-items: center; color: var(--faint); }
+/* The words replace the cover rather than sit inside it. Everything that
+   made the square read as an object - the card, the glow, the shrink while
+   paused - belongs to the artwork, not to a page of text. The space also
+   grows, because there is plenty of it above and a taller column means
+   less scrolling. */
+.art[data-words='true'] {
+  cursor: pointer;
+  background: none;
+  box-shadow: none;
+  transform: none;
+  border-radius: 0;
+  /* Exactly the square the cover occupies - no taller.
+     It used to claim more height "because there was room above", and that
+     pushed the whole column down until the volume row sat underneath the
+     queue button. Keeping the footprint means switching to the words moves
+     nothing at all: the same box, different contents. The text gives way
+     instead, which is the right way round - it scrolls, the layout does
+     not. */
+}
+/* Whatever is in the square has just arrived - a new cover, or the words
+   taking its place. A short fade is cheaper than a flip and does not ask a
+   phone to composite a rotating layer. */
+.art > * { animation: swap 0.22s ease; }
+@keyframes swap { from { opacity: 0; transform: scale(0.97); } }
+
+/* The line above the cover. Its height is held even while it says nothing,
+   so the cover does not jump down once the words have loaded. */
+.hint {
+  height: 15px; font-size: 11px; color: var(--faint); letter-spacing: 0.01em;
+  opacity: 0; transition: opacity 0.3s ease; pointer-events: none; user-select: none;
+}
+.hint[data-on='true'] { opacity: 1; }
+
+.words {
+  position: relative;
+  width: 100%; height: 100%; overflow-y: auto; padding: 20px 14px;
+  /* A touch more side room than the text needs: the sung line is scaled
+     up, and at full width it would otherwise graze the edges. */
+  text-align: center; scroll-behavior: smooth; -webkit-overflow-scrolling: touch;
+  /* The ends dissolve rather than stop. In percentages, not pixels, so the
+     clear band stays about five lines wide on any screen - the sung line,
+     its neighbours, and then the song fading away in both directions. A
+     22px ramp was too short to read as anything but a hard edge. */
+  mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+}
+/* Bigger type, further apart, so fewer lines are on screen at once. A page
+   of small text is a document; a handful of large lines is a song you can
+   follow at arm's length. The unsung lines are dimmer than before to match:
+   at this size they would otherwise compete with the one being sung. */
+.words p {
+  margin: 0 0 17px; font-size: 19px; line-height: 1.32;
+  color: #fff;
+  /* The weight never changes, and that is the point. Bold glyphs are wider
+     than regular ones, so promoting a line to bold re-wrapped it - a line
+     that fitted on one row became two, and everything below it jumped. The
+     emphasis below is all things that do not touch layout. */
+  font-weight: 500;
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              -webkit-text-stroke-width 0.3s ease;
+}
+/* Two kinds of emphasis, neither of which reflows anything.
+   A stroke thickens the glyphs where bold would have widened them: it is
+   painted around the letters and has no metrics of its own. And scaling a
+   block grows it about its own centre, so the lines either side stay put
+   and the column does not move. */
+.words p[data-on='true'] {
+  transform: scale(1.06);
+  -webkit-text-stroke: 0.4px #fff;
+}
+/* No timings, so no line is "the" line: a page of text to read, evenly. */
+.words p.flat { opacity: 0.75; }
+.words .note { margin: 0 0 14px; font-size: 10.5px; color: var(--faint); font-weight: 400; }
+/* Percentage height against the scroller's own height, which is definite -
+   so this really is half a box, whatever size the screen is. */
+.words .pad { height: 50%; }
+
+.meta { width: 100%; text-align: center; min-width: 0; }
+.meta .t { font-size: 19px; font-weight: 700; }
+.meta .a { font-size: 14px; color: var(--dim); margin-top: 3px; }
+
+/* ── seek + volume ──────────────────────────────────────────────────── */
+
+.track { width: 100%; }
+/* Taller than it looks: the bed is 4px, the rest is somewhere to put a
+   finger. touch-action: none stops the browser claiming the gesture as a
+   scroll halfway through a drag. */
+.rail { position: relative; height: 28px; display: flex; align-items: center; touch-action: none; }
+.rail .bed { position: absolute; inset-inline: 0; height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); }
+.rail .fill { height: 100%; border-radius: 999px; background: var(--accent); }
+.rail .knob {
+  position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5); transform: translateX(-7px);
+  /* Only the grow-on-grab is animated. A transition on `left` would make
+     the knob lag behind the finger, which reads as the control fighting
+     back rather than as smoothing. */
+  transition: transform 0.12s ease;
+  will-change: left;
+}
+.rail[data-held='true'] .knob { transform: translateX(-7px) scale(1.35); }
+.times { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+.vol { width: 100%; display: flex; align-items: center; gap: 10px; color: var(--faint); }
+.vol .rail { flex: 1; }
+.vol .pct { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; width: 30px; text-align: right; }
+
+/* ── controls ───────────────────────────────────────────────────────── */
+
+.ctrls { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; }
+/* The icons are 21-27px, which is a fine thing to look at and a poor thing
+   to hit. The padding is the tap target: it brings every control to about
+   45px square without moving the icons apart, since the gap shrank to pay
+   for it. */
+.ctrls button { position: relative; color: rgba(255, 255, 255, 0.75); padding: 9px; transition: color 0.15s ease, transform 0.1s ease; }
+/* The dot the bottom bar puts under a control that is switched on. Same
+   idea, one pixel bigger: the icons here are larger than the desktop's, and
+   a 3px dot under a 21px icon reads as a smudge rather than as a mark.
+   It lives in the padding that was added for the tap target, so it costs no
+   layout and the row does not shift when it appears. */
+.ctrls button[data-on='true']::after {
+  content: ''; position: absolute; left: 50%; bottom: 2px;
+  width: 4px; height: 4px; margin-left: -2px; border-radius: 50%;
+  background: var(--accent);
+  animation: dot-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes dot-in { from { transform: scale(0); opacity: 0; } }
+.ctrls button:active { transform: scale(0.88); }
+.ctrls button[data-on='true'] { color: var(--accent); }
+.ctrls .play {
+  width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent); color: #0b0a0e;
+  box-shadow: 0 8px 26px rgba(var(--accent-rgb), 0.45);
+}
+
+/* ── library sheet ──────────────────────────────────────────────────── */
+
+.sheet {
+  position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column;
+  background: var(--bg);
+  animation: sheet-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Its own keyframes for the way out, never `sheet-in reverse`: a browser
+   re-uses an animation whose name has not changed instead of restarting
+   it, and the exit would play its last frame instantly. */
+.sheet[data-closing='true'] { animation: sheet-out 0.22s cubic-bezier(0.4, 0, 1, 1) both; }
+@keyframes sheet-in { from { transform: translateY(100%); } }
+@keyframes sheet-out { to { transform: translateY(100%); } }
+
+/* A drawer that opens and closes by height instead of appearing and
+   disappearing. grid-template-rows interpolates between 0fr and 1fr, which
+   is the one way to animate "as tall as its contents" without measuring
+   anything. The child clips, so there is nothing hanging out while it is
+   shut. */
+.fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+.fold[data-open='true'] { grid-template-rows: 1fr; }
+.fold > * { overflow: hidden; min-height: 0; }
+
+.tabs { display: flex; gap: 6px; padding: 10px 16px; }
+.tabs button {
+  flex: 1; padding: 8px 0; border-radius: 10px; font-size: 13px; font-weight: 600;
+  color: var(--dim); background: var(--card);
+  /* Without this the selected tab snapped from one button to another. */
+  transition: background 0.22s ease, color 0.22s ease;
+}
+.tabs button[data-on='true'] { color: #0b0a0e; background: var(--accent); }
+
+.find { padding: 0 16px 10px; }
+.find input:disabled { opacity: 1; }
+/* Where to look, under the box you type into - so the question is answered
+   next to where it is asked. */
+.scope { display: flex; gap: 6px; margin-top: 8px; }
+.scope button {
+  flex: 1; padding: 6px 0; border-radius: 9px; font-size: 12px; font-weight: 600;
+  color: var(--faint); background: var(--card);
+  transition: background 0.22s ease, color 0.22s ease;
+}
+.scope button[data-on='true'] { color: #0b0a0e; background: var(--accent); }
+
+/* ── the player, while a sheet is covering it ───────────────────────── */
+
+.minibar {
+  flex: none; position: relative;
+  background: rgba(20, 19, 25, 0.96);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+/* Sits on the border, so it reads as the edge of the bar rather than as one
+   more row in it - but the control around it is wide enough for a finger.
+   Everything but the line itself is empty space over the top of the bar. */
+.minibar .mb-rail { position: absolute; top: -9px; left: 0; right: 0; height: 18px; z-index: 1; }
+.minibar .mb-rail .bed { height: 2px; border-radius: 0; background: rgba(255, 255, 255, 0.09); }
+.minibar .mb-rail[data-held='true'] .bed { height: 4px; }
+.minibar .mb-rail .fill { border-radius: 0; }
+/* The handle only exists while a finger is on it; the rest of the time this
+   is a hairline and should look like one. */
+.minibar .mb-rail .knob { opacity: 0; }
+.minibar .mb-rail[data-held='true'] .knob { opacity: 1; }
+
+.mb-row { display: flex; align-items: center; gap: 4px; padding: 9px 10px 9px 16px; }
+.mb-txt { flex: 1; min-width: 0; display: block; }
+.mb-txt .t { display: block; font-size: 13.5px; font-weight: 600; }
+.mb-txt .a { display: block; font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.mb-row button { padding: 9px; color: rgba(255, 255, 255, 0.8); transition: transform 0.1s ease; }
+.mb-row button:active { transform: scale(0.88); }
+.mb-play {
+  width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent); color: #0b0a0e; padding: 0 !important; flex: none;
+}
+.find input {
+  width: 100%; padding: 10px 13px; border-radius: 11px; font-size: 14px;
+  color: #fff; background: var(--card); border: 1px solid var(--line); outline: none;
+}
+.find input::placeholder { color: var(--faint); }
+
+/* The playlist's own row of controls: filter on the left, order on the
+   right. Lives inside a fold, so it opens and closes with the playlist
+   rather than appearing on top of it. */
+.plbar { display: flex; gap: 8px; padding: 0 16px 10px; }
+.plfind {
+  flex: 1; min-width: 0; padding: 9px 12px; border-radius: 11px; font-size: 14px;
+  color: #fff; background: var(--card); border: 1px solid var(--line); outline: none;
+}
+.plfind::placeholder { color: var(--faint); }
+.plfind:disabled { opacity: 1; }
+.plsort {
+  flex: none; display: flex; align-items: center; gap: 5px;
+  padding: 0 12px; border-radius: 11px; font-size: 12.5px; font-weight: 600;
+  color: var(--dim); background: var(--card); border: 1px solid var(--line);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.plsort:active { color: #fff; border-color: rgba(var(--accent-rgb), 0.5); }
+
+/* Lengths line up under each other, so the column reads as a column. */
+.row .dur {
+  flex: none; font-size: 11.5px; color: var(--faint);
+  font-variant-numeric: tabular-nums; padding-left: 6px;
+}
+
+.rows {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 20px; -webkit-overflow-scrolling: touch;
+  animation: rows-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: opacity 0.2s ease;
+}
+/* The previous list stays put, half faded, while the next one is fetched.
+   Blanking it first made one tap look like three separate screens. */
+.rows[data-busy='true'] { opacity: 0.4; }
+@keyframes rows-in { from { opacity: 0; transform: translateY(8px); } }
+.row {
+  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+  padding: 9px 10px; border-radius: 13px;
+}
+.row:active { background: var(--card); }
+.row .cov {
+  width: 42px; height: 42px; border-radius: 9px; flex: none; overflow: hidden;
+  background: var(--card); display: grid; place-items: center;
+}
+.row .cov img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.row .txt { flex: 1; min-width: 0; display: block; }
+/* Blocks, not spans: as inlines these two ran together on one line, and
+   text-overflow has nothing to work on in an inline box either, so a long
+   title ran off the side of the sheet instead of ending in an ellipsis. */
+.row .txt .t { display: block; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .txt .a { display: block; font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.row[data-on='true'] .txt .t { color: var(--accent); }
+
+.more { display: block; width: 100%; padding: 13px; font-size: 13px; color: var(--dim); }
+.empty { padding: 40px 20px; text-align: center; color: var(--faint); font-size: 13px; }
+
+/* ── queue ──────────────────────────────────────────────────────────── */
+
+.fab {
+  position: absolute; right: 16px; bottom: 18px; z-index: 2;
+  width: 52px; height: 52px; border-radius: 50%;
+  display: grid; place-items: center; color: #0b0a0e;
+  background: var(--accent);
+  box-shadow: 0 8px 24px rgba(var(--accent-rgb), 0.4), 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: transform 0.12s ease;
+}
+.fab:active { transform: scale(0.9); }
+.fab .cnt {
+  position: absolute; top: -2px; right: -2px; min-width: 19px; height: 19px; padding: 0 5px;
+  border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 19px;
+  background: var(--bg); color: #fff; border: 1px solid var(--line);
+}
+
+/* The hole above the sheet. It is the close button, so it is as wide as the
+   screen and nothing is drawn in it - only a shadow that deepens towards
+   the sheet, which is what makes the sheet look like it is in front. */
+.qgap {
+  position: absolute; inset: 0 0 auto 0; height: 66px; z-index: 3;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.5));
+  animation: gap-in 0.34s ease both;
+}
+.qgap[data-closing='true'] { animation: gap-out 0.23s ease both; }
+@keyframes gap-in { from { opacity: 0; } }
+@keyframes gap-out { to { opacity: 0; } }
+
+.qsheet {
+  position: absolute; inset: 66px 0 0 0; z-index: 4;
+  display: flex; flex-direction: column;
+  background: #141319; border-radius: 20px 20px 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55);
+  /* All the way up from off-screen. The old version moved 26px and faded,
+     which at that distance reads as something appearing rather than as a
+     sheet arriving - there was nothing to see. The curve overshoots
+     slightly at the end, which is what makes it feel thrown rather than
+     dragged. */
+  animation: sheet-up 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Out the way it came in, a little quicker: leaving should not take as
+   long as arriving.
+   Its own keyframes, not `sheet-up reverse`, and that is not a style
+   choice. A browser only restarts an animation when the NAME in the list
+   changes; keeping the name and flipping the direction merely re-labels
+   the one that already finished. Measured: the clock stayed at 340ms
+   against a new 230ms duration, so it was instantly at the end - the sheet
+   vanished with no exit at all. */
+.qsheet[data-closing='true'] { animation: sheet-down 0.23s cubic-bezier(0.4, 0, 1, 1) both; }
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@keyframes sheet-down { to { transform: translateY(100%); } }
+
+.qhead { padding: 8px 18px 10px; flex: none; }
+.grab {
+  display: block; width: 36px; height: 4px; margin: 0 auto 12px;
+  border-radius: 999px; background: rgba(255, 255, 255, 0.18);
+}
+.qtitle { display: flex; align-items: baseline; justify-content: space-between; }
+.qtitle span { font-size: 16px; font-weight: 700; }
+.qtitle .n { font-size: 12px; font-weight: 500; color: var(--faint); }
+
+/* The badge the player's own queue puts on a track whose words are known. */
+.row .t .lb {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; margin-right: 6px; border-radius: 4px;
+  font-size: 9px; font-weight: 700; font-style: normal; vertical-align: 1px;
+  background: rgba(255, 255, 255, 0.16); color: rgba(255, 255, 255, 0.85);
+}
+
+/* ── gate ───────────────────────────────────────────────────────────── */
+
+.gate {
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 30px; text-align: center;
+}
+.gate h1 { font-size: 17px; font-weight: 700; margin: 0; }
+.gate p { font-size: 13px; color: var(--dim); margin: 0; max-width: 280px; }
+.spin {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18); border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

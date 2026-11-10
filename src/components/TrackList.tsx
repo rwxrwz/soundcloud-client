@@ -1,24 +1,25 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
-import { useProfile, useUI, useLyrics, useToast, useSettings, usePlayer } from '../store'
+import { useProfile, useUI, useLyrics, useToast, usePlayer, useScan } from '../store'
 import { sc, SCTrack, SCPlaylist } from '../services/soundcloud'
 import { playlistCache, hydratingSet } from '../services/playlistCache'
-import { checkTracksLyrics } from '../services/lyrics'
 import { TrackCard } from './TrackCard'
 import { CreatePlaylistModal } from './CreatePlaylistModal'
 import { ImportPlaylistModal } from './ImportPlaylistModal'
 import { ConfirmDialog } from './ConfirmDialog'
-import { MainPage } from './MainPage'
 import { SearchResults } from './SearchResults'
+import { PlaylistSuggestions } from './PlaylistSuggestions'
 import { encodePlaylist } from '../services/playlistShare'
 import { SegmentedTabs } from './SegmentedTabs'
 import { useT, timeAgo } from '../i18n'
+import { BAR_SPACE } from '../layout'
+import { LyricsScan } from './LyricsScan'
 
 // Remembers each tab's scroll position so switching tabs (and coming back) doesn't
 // jump to the top. Module-level so it survives the per-page remount of the list DOM.
 const scrollMemory = new Map<string, number>()
 
 export function TrackList() {
-  const { likes, stream, playlists, likedPlaylists, setLikedPlaylists, releases, setReleases, setPlaylists, user, localPlaylists, removeLocalPlaylist } = useProfile()
+  const { likes, playlists, likedPlaylists, setLikedPlaylists, releases, setReleases, setPlaylists, user, localPlaylists, removeLocalPlaylist } = useProfile()
   const { page, selectedPlaylist, searchQuery, setSearch, setSelectedPlaylist, backFromPlaylist, trackOrder, setTrackOrder, setArtistPage, setPlaylistMenu } = useUI()
   const shuffle = usePlayer(s => s.shuffle)
   const currentTrackId = usePlayer(s => s.currentTrack?.id)
@@ -31,16 +32,18 @@ export function TrackList() {
   const [playlistFilter, setPlaylistFilter] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [searchClosing, setSearchClosing] = useState(false)
-  const [lyricsOnly, setLyricsOnly] = useState(false)
+  /* Three states, cycled by the one chip: off, only tracks that have
+     words, only tracks that do not. The third is what you want after a
+     scan - "what did it miss" - and it was the one thing the filter row
+     could not answer. */
+  const [lyricsFilter, setLyricsFilter] = useState<'off' | 'with' | 'without'>('off')
   const [drmOnly, setDrmOnly] = useState(false)
   const [artistFilter, setArtistFilter] = useState('')
   const lyricsMap = useLyrics(s => s.available)
-  const perfBigLists = useSettings(s => s.perfBigLists)
   const filterInputRef = useRef<HTMLInputElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
   const gridScrollRef = useRef<HTMLDivElement>(null)
   const t = useT()
-  const markLyrics = useLyrics(s => s.mark)
 
   // Per-tab scroll memory: save on scroll, restore on return. Keyed by view
   // (open playlist keyed by its id). Restore waits for the virtualized list to
@@ -82,8 +85,7 @@ export function TrackList() {
     setSearchClosing(true)
     setTimeout(() => { setFilterOpen(false); setPlaylistFilter(''); setSearchClosing(false) }, 170)
   }
-  const [scanning, setScanning] = useState(false)
-  const scanCancelRef = useRef(false)
+  const scanning = useScan(s => s.running)
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false)
   const [showImportPlaylist, setShowImportPlaylist] = useState(false)
   const [showDeletePlaylist, setShowDeletePlaylist] = useState(false)
@@ -134,7 +136,7 @@ export function TrackList() {
     if (playlistCache.has(id) || hydratingSet.has(id)) return
     const stubs = playlist.tracks ?? []
     // The user-playlists listing can carry a truncated `tracks` array (shorter than
-    // track_count) — refetch the authoritative full list so newest tracks aren't lost.
+    // track_count) - refetch the authoritative full list so newest tracks aren't lost.
     const needFull = id > 0 && stubs.length < (playlist.track_count ?? stubs.length)
     const needsHydration = needFull || stubs.some(t => !t.title || !t.duration)
     if (!needsHydration) { playlistCache.set(id, stubs); return }
@@ -166,7 +168,7 @@ export function TrackList() {
   // Search results (tabs: all/tracks/artists/albums/playlists) live in <SearchResults/>.
 
   // Reset filters when playlist changes
-  useEffect(() => { setPlaylistFilter(''); setFilterOpen(false); setLyricsOnly(false); setDrmOnly(false); setArtistFilter('') }, [selectedPlaylist?.id, page])
+  useEffect(() => { setPlaylistFilter(''); setFilterOpen(false); setLyricsFilter('off'); setDrmOnly(false); setArtistFilter('') }, [selectedPlaylist?.id, page])
 
 
   // Show playlist tracks
@@ -175,7 +177,7 @@ export function TrackList() {
     const id = selectedPlaylist.id
     const expected = selectedPlaylist.track_count ?? 0
 
-    // Use cache only if it's complete — a truncated listing must be refetched.
+    // Use cache only if it's complete - a truncated listing must be refetched.
     const cached = playlistCache.get(id)
     if (cached && (id < 0 || cached.length >= expected)) { setHydratedTracks(cached); return }
 
@@ -198,7 +200,10 @@ export function TrackList() {
       })
       .catch(console.error)
       .finally(() => setHydrating(false))
-  }, [selectedPlaylist?.id, page])
+    /* The object, not just its id: a refresh hands back a new playlist with a
+       new track_count and drops its cached tracks, and keyed on the id alone
+       this would never run again for the playlist already on screen. */
+  }, [selectedPlaylist, page])
 
   // Animate on section change
   useEffect(() => { setListKey(k => k + 1) }, [page, trackOrder])
@@ -209,7 +214,6 @@ export function TrackList() {
   const canFilter = page === 'likes' || page === 'playlist-detail'
 
   switch (page) {
-    case 'stream':          rawTracks = stream;                                                   title = t('streamTitle'); break
     case 'releases':        rawTracks = releases;                                                 title = t('releasesTitle'); break
     case 'likes':           rawTracks = likes;                                                    title = t('likesTitle'); break
     case 'search':          rawTracks = [];                                                       title = ''; break
@@ -236,13 +240,17 @@ export function TrackList() {
         const aq = artistFilter.toLowerCase()
         list = list.filter(tr => tr.user?.username?.toLowerCase().includes(aq))
       }
-      if (lyricsOnly) list = list.filter(tr => lyricsMap[tr.id] === true)
+      /* `=== true` and `!== true` rather than a boolean test: the map
+         holds undefined for a track nobody has looked at, and "not known
+         to have words" is the honest meaning of the second filter. */
+      if (lyricsFilter === 'with') list = list.filter(tr => lyricsMap[tr.id] === true)
+      else if (lyricsFilter === 'without') list = list.filter(tr => lyricsMap[tr.id] !== true)
       if (drmOnly) list = list.filter(tr => sc.isDrm(tr))
     }
     return list
-  }, [rawTracks, trackOrder, canSort, playlistFilter, page, artistFilter, lyricsOnly, drmOnly, lyricsMap])
+  }, [rawTracks, trackOrder, canSort, playlistFilter, page, artistFilter, lyricsFilter, drmOnly, lyricsMap])
 
-  const hasActiveFilter = !!(playlistFilter || artistFilter || lyricsOnly || drmOnly)
+  const hasActiveFilter = !!(playlistFilter || artistFilter || lyricsFilter !== 'off' || drmOnly)
 
   // A foreign playlist (not local, not authored by me) can be liked/unliked here.
   const plForeign = !!selectedPlaylist && selectedPlaylist.id >= 0 && !(user && selectedPlaylist.user?.id === user.id)
@@ -262,22 +270,12 @@ export function TrackList() {
     }
   }
 
-  const handleScanLyrics = async () => {
-    if (scanning) { scanCancelRef.current = true; setScanning(false); return }
-    setScanning(true)
-    scanCancelRef.current = false
-    // Each track costs several lrclib requests, so a few thousand tracks would
-    // mean tens of thousands of calls. With "big lists" on, scan a slice.
-    const SCAN_CAP = 300
-    const list = perfBigLists && tracks.length > SCAN_CAP ? tracks.slice(0, SCAN_CAP) : tracks
-    if (list.length < tracks.length) showToast(`${t('scanLyrics')}: ${list.length} / ${tracks.length}`, 'info')
-    await checkTracksLyrics(list, markLyrics, () => scanCancelRef.current)
-    setScanning(false)
-  }
-  useEffect(() => () => { scanCancelRef.current = true }, [])
+  /* The button no longer starts anything. What it starts can take hours
+     on one choice and seconds on another, so it opens a panel that says
+     which before anything happens. */
+  const [scanOpen, setScanOpen] = useState(false)
 
   // ── Home dashboard ──
-  if (page === 'main') return <MainPage />
 
   // ── Playlists grid ──
   if (page === 'playlists') {
@@ -325,7 +323,7 @@ export function TrackList() {
             onImported={pl => setSelectedPlaylist(pl)}
           />
         )}
-        <div ref={gridScrollRef} onScroll={saveScroll} className="flex-1 overflow-y-auto px-4 pb-4">
+        <div ref={gridScrollRef} onScroll={saveScroll} className="flex-1 overflow-y-auto px-4" style={{ paddingBottom: BAR_SPACE + 12 }}>
           {localPlaylists.length + playlists.length + likedPlaylists.length === 0 ? (
             <Empty text={t('noPlaylistsYet')} />
           ) : (
@@ -446,8 +444,7 @@ export function TrackList() {
         {page === 'playlist-detail' && !filterOpen && plForeign && (
           <button
             onClick={toggleLikePlaylist}
-            title={plLiked ? t('unlikePlaylistAction') : t('likePlaylistAction')}
-            className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            title={plLiked ? t('unlikePlaylistAction') : t('likePlaylistAction')} className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
             style={{ color: plLiked ? 'var(--accent)' : 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
             onMouseEnter={e => { if (!plLiked) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = plLiked ? 'var(--accent)' : 'rgba(255,255,255,0.4)' }}
@@ -462,8 +459,7 @@ export function TrackList() {
         {page === 'playlist-detail' && !filterOpen && tracks.length > 0 && (
           <button
             onClick={handleSharePlaylist}
-            title={t('sharePlaylist')}
-            className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            title={t('sharePlaylist')} className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
             style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)'}
@@ -478,8 +474,7 @@ export function TrackList() {
         {page === 'playlist-detail' && !filterOpen && !plForeign && (
           <button
             onClick={() => setShowDeletePlaylist(true)}
-            title={t('deletePlaylist')}
-            className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            title={t('deletePlaylist')} className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
             style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#f87171'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)'}
@@ -492,10 +487,10 @@ export function TrackList() {
 
         {/* Scan lyrics */}
         {tracks.length > 0 && !filterOpen && page !== 'search' && (
+          <div className="relative shrink-0">
           <button
-            onClick={handleScanLyrics}
-            title={t('scanLyrics')}
-            className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
+            onClick={() => setScanOpen(o => !o)}
+            title={t('scanLyrics')} className="icon-btn flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-all"
             style={{ color: scanning ? 'var(--accent)' : 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
             onMouseEnter={e => { if (!scanning) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)' }}
             onMouseLeave={e => { if (!scanning) (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)' }}
@@ -506,6 +501,8 @@ export function TrackList() {
               <span className="text-[14px] font-extrabold leading-none">L</span>
             )}
           </button>
+          {scanOpen && <LyricsScan tracks={tracks} onClose={() => setScanOpen(false)} />}
+          </div>
         )}
 
         {/* Sort toggle */}
@@ -524,18 +521,32 @@ export function TrackList() {
       {/* Filter bar */}
       {canFilter && filterOpen && (
         <div className={`px-5 pb-2 flex items-center gap-2 shrink-0 flex-wrap ${searchClosing ? 'search-out' : 'search-in'}`}>
+          {/* One chip, cycled. The label is what tells the two active
+              states apart - a colour alone could not say which way round
+              the filter runs - and the struck badge says it again without
+              reading. */}
           <button
-            onClick={() => setLyricsOnly(v => !v)}
+            onClick={() => setLyricsFilter(v => v === 'off' ? 'with' : v === 'with' ? 'without' : 'off')}
             className="icon-btn flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
             style={{
-              background: lyricsOnly ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.06)',
-              color: lyricsOnly ? 'var(--accent)' : 'rgba(255,255,255,0.55)',
-              border: lyricsOnly ? '1px solid rgba(var(--accent-rgb),0.4)' : '1px solid rgba(255,255,255,0.08)',
+              background: lyricsFilter !== 'off' ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.06)',
+              color: lyricsFilter !== 'off' ? 'var(--accent)' : 'rgba(255,255,255,0.55)',
+              border: lyricsFilter !== 'off' ? '1px solid rgba(var(--accent-rgb),0.4)' : '1px solid rgba(255,255,255,0.08)',
             }}
           >
-            <span className="inline-flex items-center justify-center text-[8px] font-bold rounded"
-              style={{ width: 13, height: 13, background: 'rgba(255,255,255,0.18)', color: 'rgba(255,255,255,0.85)' }}>L</span>
-            {t('withLyrics')}
+            <span className="relative inline-flex items-center justify-center text-[8px] font-bold rounded"
+              style={{
+                width: 13, height: 13,
+                background: 'rgba(255,255,255,0.18)',
+                color: lyricsFilter === 'without' ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.85)',
+              }}>
+              L
+              {lyricsFilter === 'without' && (
+                <span className="absolute left-[1px] right-[1px] top-1/2 h-px rotate-[-32deg]"
+                  style={{ background: 'currentColor', opacity: 0.9 }} />
+              )}
+            </span>
+            {lyricsFilter === 'without' ? t('withoutLyrics') : t('withLyrics')}
           </button>
 
           <button
@@ -582,7 +593,9 @@ export function TrackList() {
       )}
 
       {/* List */}
-      <div ref={listScrollRef} onScroll={saveScroll} className="flex-1 overflow-y-auto px-3 pb-3">
+      {/* Room for the floating bar: the list scrolls under it, so the last rows
+          need that much space to clear the glass. */}
+      <div ref={listScrollRef} onScroll={saveScroll} className="flex-1 overflow-y-auto px-3" style={{ paddingBottom: BAR_SPACE + 12 }}>
         {page === 'playlist-detail' && selectedPlaylist && (() => {
           const cover = sc.formatArtwork(selectedPlaylist.artwork_url ?? selectedPlaylist.tracks?.[0]?.artwork_url ?? '', 't500x500')
           const durMs = selectedPlaylist.duration || rawTracks.reduce((s, tr) => s + (tr.duration || 0), 0)
@@ -613,7 +626,7 @@ export function TrackList() {
           return (
             <div className="flex items-stretch gap-7 px-3 pt-3 pb-7 mb-2">
               {cover
-                ? <img src={cover} alt="" onContextMenu={openMenu} className="w-52 h-52 rounded-2xl object-cover shrink-0 cursor-pointer" style={{ boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }} />
+                ? <img src={cover} alt="" onContextMenu={openMenu} className="w-52 h-52 rounded-2xl object-cover shrink-0 cursor-pointer" style={{ boxShadow: 'var(--sh-2)' }} />
                 : <div onContextMenu={openMenu} className="w-52 h-52 rounded-2xl shrink-0 bg-white/5 flex items-center justify-center cursor-pointer"><svg className="w-16 h-16 text-white/20" fill="currentColor" viewBox="0 0 20 20"><path d="M18 3a1 1 0 00-1.196-.98l-8 1.6A1 1 0 008 4.6v7.28A3 3 0 1010 14V7.82l6-1.2v3.06A3 3 0 1018 12V3z"/></svg></div>}
               <div className="min-w-0 flex-1 flex flex-col py-3">
                 <h1 onContextMenu={openMenu} className="text-3xl font-bold text-white leading-tight line-clamp-2 cursor-pointer">{title}</h1>
@@ -660,7 +673,7 @@ export function TrackList() {
         ) : tracks.length === 0 ? (
           <Empty text={t('nothingHere')} />
         ) : (
-          perfBigLists && tracks.length > 80 ? (
+          tracks.length > 80 ? (
             <VirtualTrackRows
               key={listKey}
               scrollRef={listScrollRef}
@@ -673,6 +686,14 @@ export function TrackList() {
               {tracks.map(track => <TrackCard key={track.id} track={track} queue={tracks} showDate={page === 'releases'} />)}
             </div>
           )
+        )}
+
+        {/* Under the last track, which is where their app puts it and the
+            only place it makes sense: the playlist has just been read and
+            the question "what else" is already in mind. Not on somebody
+            else's playlist - the plus would have nowhere to put a track. */}
+        {page === 'playlist-detail' && selectedPlaylist && !plForeign && (
+          <PlaylistSuggestions playlist={selectedPlaylist} tracks={tracks} />
         )}
       </div>
     </div>
@@ -711,7 +732,7 @@ function VirtualTrackRows({ scrollRef, tracks, showDate, className }: {
     const update = () => {
       // Rows can start below a header (e.g. the playlist hero) inside the same
       // scroller, so measure this list's offset within the scroll content and read
-      // the scroll position relative to it — otherwise rows shift by the header height.
+      // the scroll position relative to it - otherwise rows shift by the header height.
       const root = rootRef.current
       const listTop = root ? root.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop : 0
       const rel = Math.max(0, sc.scrollTop - listTop)

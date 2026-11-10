@@ -15,7 +15,9 @@ export interface Release {
 // Numeric semver compare of a vs b (ignores a leading "v" and any -prerelease
 // suffix). >0 if a>b, <0 if a<b, 0 if equal.
 export function cmpVersion(a: string, b: string): number {
-  const parse = (s: string) => (s || '').replace(/^v/i, '').split('-')[0].split('.').map(n => parseInt(n, 10) || 0)
+  // String(): a stamp read back from storage is not guaranteed to be one,
+  // and .replace on a number threw where the whole comparison then failed.
+  const parse = (s: string) => String(s ?? '').replace(/^v/i, '').split('-')[0].split('.').map(n => parseInt(n, 10) || 0)
   const pa = parse(a), pb = parse(b)
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const d = (pa[i] ?? 0) - (pb[i] ?? 0)
@@ -49,5 +51,5 @@ export async function checkForUpdates(force = false): Promise<void> {
   try {
     const [current, releases] = await Promise.all([api.getAppVersion(), api.getReleases(force)])
     useUpdate.getState().setData(current, releases)
-  } catch { /* offline / rate-limited — keep prior state */ }
+  } catch { /* offline / rate-limited - keep prior state */ }
 }

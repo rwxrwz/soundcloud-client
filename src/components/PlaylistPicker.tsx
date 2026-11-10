@@ -54,7 +54,7 @@ export function PlaylistPicker() {
       console.error('[PlaylistPicker] setPlaylistTracks failed:', err)
       const raw = err instanceof Error ? err.message : 'Unknown error'
       const msg = raw.includes('captcha') || raw.includes('403')
-        ? 'SoundCloud запросил проверку — попробуй ещё раз через пару секунд'
+        ? 'SoundCloud запросил проверку - попробуй ещё раз через пару секунд'
         : raw
       setError(msg)
       // Rollback

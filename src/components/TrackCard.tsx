@@ -12,11 +12,17 @@ interface Props {
 }
 
 function TrackCardBase({ track, queue, showDate }: Props) {
-  const { setTrack, currentTrack, isPlaying, setPlaying } = usePlayer()
+  /* memo() on this component could not help while it subscribed to the
+     whole player store: progress is written several times a second, so
+     every mounted row re-rendered at that rate anyway and dragged its
+     TrackActions child along. The row only cares whether it is the one
+     playing. */
+  const active = usePlayer(s => s.currentTrack?.id === track.id)
+  const isPlaying = usePlayer(s => s.isPlaying)
+  const { setTrack, setPlaying } = usePlayer.getState()
   const { setArtistPage, setContextMenu } = useUI()
   const hasLyrics = useLyrics(s => s.available[track.id])
   const accentHex = useAccentHex()
-  const active = currentTrack?.id === track.id
 
   const artwork = sc.formatArtwork(track.artwork_url || track.user?.avatar_url, 't200x200')
 
@@ -36,13 +42,16 @@ function TrackCardBase({ track, queue, showDate }: Props) {
     <div
       onClick={handleClick}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track }) }}
-      className="icon-btn group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200"
+      data-active={active ? 'true' : 'false'}
+      /* The playing row carries an accent tint, which is enough for the snow to
+         read it as a ledge. It is the one row you are looking at, so it stays
+         clear; data-snow="off" is the opt-out the surface scan honours. */
+      data-snow="off"
+      className="icon-btn row-hover group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200"
       style={{
-        background: active ? `rgba(var(--accent-rgb), 0.12)` : 'transparent',
+        background: active ? `rgba(var(--accent-rgb), 0.12)` : undefined,
         border: active ? `1px solid rgba(var(--accent-rgb), 0.25)` : '1px solid transparent',
       }}
-      onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)' }}
-      onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
     >
       {/* Artwork */}
       <div className="relative shrink-0 w-11 h-11 rounded-lg overflow-hidden bg-white/5">

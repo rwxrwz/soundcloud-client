@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Shadow scale ──────────────────────────────────────────────
+   Three levels, and every one of them has a NEGATIVE spread: that keeps the
+   dark cloud underneath the element instead of smearing it onto whatever sits
+   next to it. A shadow without negative spread reads as a black rim as soon as
+   the surface behind it is light - which happens here, because backgrounds are
+   tinted from the artwork. Accent glows are the exception and live below: they
+   are meant to spill outward. */
+:root {
+  --sh-1: 0 4px 14px -8px rgba(0, 0, 0, 0.45);    /* small controls, chips */
+  --sh-2: 0 14px 36px -18px rgba(0, 0, 0, 0.55);  /* panels, menus, covers */
+  --sh-3: 0 28px 70px -30px rgba(0, 0, 0, 0.65);  /* modals, big overlays */
+}
+
 /* Register custom properties so they can be transitioned */
 @property --accent {
   syntax: '<color>';
@@ -11,7 +24,7 @@
 
 * { box-sizing: border-box; -webkit-app-region: no-drag; }
 
-/* No default browser focus outline — the app uses its own hover/active states */
+/* No default browser focus outline - the app uses its own hover/active states */
 :focus, :focus-visible { outline: none !important; }
 
 html, body, #root {
@@ -53,22 +66,26 @@ canvas { display: block; }
   -webkit-backdrop-filter: blur(60px) saturate(180%) brightness(0.85);
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow:
-    0 12px 32px -12px rgba(0, 0, 0, 0.55),
+    /* Negative spread keeps the cloud under the panel instead of smearing a dark
+       band onto whatever sits next to it - the content area can be bright. */
+    var(--sh-2),
     inset 0 1px 0 rgba(255, 255, 255, 0.15),
     inset 0 -1px 0 rgba(0, 0, 0, 0.2);
 }
 
-.glass-card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.07);
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+/* One surface for everything that floats above the canvas: menus, pickers,
+   banners, settings. Same glass as the player's islands, so the app reads as one
+   material instead of a set of differently painted boxes. */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(44px) saturate(175%) brightness(0.86);
+  -webkit-backdrop-filter: blur(44px) saturate(175%) brightness(0.86);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    var(--sh-2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.13);
 }
-.glass-card:hover {
-  background: rgba(255,255,255,0.07);
-  border-color: rgba(255,255,255,0.12);
-  transform: translateY(-1px);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-}
+
 
 /* ── Theme presets ────────────────────────────────────────────
    Everything lives under [data-theme="…"] so the unset / "default"
@@ -77,89 +94,62 @@ canvas { display: block; }
    Components read --glass-bg/border/blur inline AND via .glass-*,
    so retargeting both covers the bulk of the app's surfaces. */
 
-/* Glass — light see-through panels: low overlay + light blur so the wallpaper
+/* Glass - light see-through panels: low overlay + light blur so the wallpaper
    stays visible through it (heavy blur reads as opaque/frosted, not glass). */
-[data-theme="glass"] {
-  --glass-bg: rgba(255,255,255,0.025);
-  --glass-border: rgba(255,255,255,0.22);
-  --glass-blur: 14px;
-}
-[data-theme="glass"] .glass-island {
-  background: rgba(255,255,255,0.025);
-  backdrop-filter: blur(16px) saturate(160%) brightness(1.06);
-  -webkit-backdrop-filter: blur(16px) saturate(160%) brightness(1.06);
-  border-color: rgba(255,255,255,0.22);
-}
-[data-theme="glass"] .glass-card {
-  background: rgba(255,255,255,0.02);
-  backdrop-filter: blur(12px) saturate(150%) brightness(1.06);
-  -webkit-backdrop-filter: blur(12px) saturate(150%) brightness(1.06);
-  border-color: rgba(255,255,255,0.16);
-}
-[data-theme="glass"] .glass-card:hover {
-  background: rgba(255,255,255,0.07);
-  border-color: rgba(255,255,255,0.3);
-}
-/* corners kept identical to default */
-
-/* Minimal — flat, thin borders, small corners, no blur, no shadows */
-[data-theme="minimal"] {
-  --glass-bg: rgba(255,255,255,0.04);
-  --glass-border: rgba(255,255,255,0.10);
-  --glass-blur: 0px;
-}
-[data-theme="minimal"] .glass-island {
-  background: #101014;
-  backdrop-filter: none; -webkit-backdrop-filter: none;
-  border-color: rgba(255,255,255,0.10);
-  box-shadow: none;
-}
-[data-theme="minimal"] .glass-card {
-  background: #101014;
-  backdrop-filter: none; -webkit-backdrop-filter: none;
-  border-color: rgba(255,255,255,0.08);
-  box-shadow: none;
-}
-[data-theme="minimal"] .glass-card:hover { background: #16161c; transform: none; box-shadow: none; }
-/* corners kept identical to default */
-
-/* Transparent — real see-through window ("liquid glass"). body becomes transparent
+/* Transparent - real see-through window ("liquid glass"). body becomes transparent
    so the OS shows through; the desktop blur behind is done by the compositor
    (Linux/Hyprland) or native acrylic (Win11), not by CSS. The window tint is on the
    Player root (driven by the transparency slider). Panels keep their glass look but
    lean lighter so the see-through effect reads. */
 [data-theme="transparent"] body { background: transparent; }
+/* Measured, four window/page combinations: with a transparent root Chromium
+   switches backdrop-filter OFF for the whole document. In this theme NOTHING
+   blurs - not the islands, not the scrim under the settings panel - and the
+   only lever left on a surface is how opaque its own fill is. Chasing a blur
+   here is wasted work; the glass look has to come from the veil alone. */
 [data-theme="transparent"] {
   --glass-bg: rgba(255,255,255,0.05);
   --glass-border: rgba(255,255,255,0.16);
   --glass-blur: 30px;
 }
+[data-theme="transparent"] .edit-dock,
+[data-theme="transparent"] .glass-deep,
+[data-theme="transparent"] .edit-opts {
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(30px) saturate(160%) brightness(1.02);
+  -webkit-backdrop-filter: blur(30px) saturate(160%) brightness(1.02);
+}
+/* The pill keeps its base here too, and needs it more: on a see-through
+   window the thing behind the text is the desktop, which can be anything. */
+[data-theme="transparent"] .edit-banner {
+  background:
+    linear-gradient(rgba(11, 11, 17, 0.5), rgba(11, 11, 17, 0.5)),
+    rgba(255,255,255,0.06);
+  backdrop-filter: blur(30px) saturate(160%);
+  -webkit-backdrop-filter: blur(30px) saturate(160%);
+}
+[data-theme="transparent"] .edit-dock,
+[data-theme="transparent"] .glass-deep,
+[data-theme="transparent"] .edit-opts { border-color: rgba(255,255,255,0.16); }
 [data-theme="transparent"] .glass-island {
   background: rgba(255,255,255,0.06);
   backdrop-filter: blur(30px) saturate(160%) brightness(1.02);
   -webkit-backdrop-filter: blur(30px) saturate(160%) brightness(1.02);
   border-color: rgba(255,255,255,0.16);
 }
-[data-theme="transparent"] .glass-card {
-  background: rgba(255,255,255,0.04);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
-  border-color: rgba(255,255,255,0.12);
-}
-[data-theme="transparent"] .glass-card:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22); }
-
+[data-theme="transparent"] [data-theme="transparent"] 
 /* ── Icon button hover ────────────────────────────────────────
    Reusable hover for buttons: an edge glow plus a soft spotlight that tracks the
-   cursor. Add the class `icon-btn` and nothing else — a single global mousemove
+   cursor. Add the class `icon-btn` and nothing else - a single global mousemove
    listener (App.tsx) writes the cursor position into --mx/--my on whichever
    .icon-btn is under the pointer. The spotlight is a ::after radial-gradient at
    z-index -1 inside an isolated stacking context, so it paints above the button's
-   own background but below its text/icon — no per-child z-index or span wrapper
+   own background but below its text/icon - no per-child z-index or span wrapper
    needed. border-radius: inherit clips it to the button shape (round or pill).
    The glow is a plain box-shadow on the button, layering over any inline bg. */
 .icon-btn { isolation: isolate; }
 /* Give a positioning context for the pseudo-elements, but don't override buttons
-   that are already absolutely/fixed positioned (close/back corners) — that moved them. */
+   that are already absolutely/fixed positioned (close/back corners) - that moved them. */
 .icon-btn:not(.absolute):not(.fixed):not(.sticky) { position: relative; }
 /* ::after = cursor spotlight, ::before = edge glow. Both sit behind the content
    (z-index -1 in an isolated context, clipped to the button shape) and share the
@@ -181,33 +171,43 @@ canvas { display: block; }
 [data-icon-glow] .icon-btn:hover::before,
 [data-icon-glow] .icon-btn:hover::after { opacity: 1; transition: opacity 0.15s ease; }
 
+/* ── Selectable row hover ─────────────────────────────────────
+   Hover tint for rows that can also be "active" (settings tabs, track rows,
+   queue items). Driven by the data-active attribute on purpose: a JS
+   mouseenter/mouseleave pair guarded by `if (!active)` skips its own cleanup
+   the moment a hovered row is clicked and becomes active, leaving an inline
+   background stuck on it forever. CSS has no such state to forget - the row
+   stops matching and the tint goes with it. Rows must therefore NOT set an
+   inline background while inactive; inline styles outrank this rule. */
+.row-hover[data-active='false']:hover { background: rgba(255, 255, 255, 0.05); }
+
 /* ── Slider ───────────────────────────────────────────────── */
-.slider-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
-  width: 100%;
-  height: 20px;
-}
 
 /* ── Animations ───────────────────────────────────────────── */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.fade-up { animation: fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.fade-up { animation: fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 
 @keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
-.fade-in { animation: fade-in 0.35s ease both; }
+.fade-in { animation: fade-in 0.35s ease backwards; }
 
 @keyframes scale-in {
   from { opacity: 0; transform: scale(0.9); }
   to   { opacity: 1; transform: scale(1); }
+}
+/* A context menu leaving. Shallower than the way in on purpose: arriving is
+   worth announcing, going away is not, and a menu that collapses to 0.9 on
+   the way out reads as being sucked into the cursor.
+   `forwards` holds the last frame - without it the menu snaps back to full
+   size for the frame between the animation ending and the unmount. */
+@keyframes ctx-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.96); }
 }
 .scale-in { animation: scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
@@ -222,11 +222,6 @@ canvas { display: block; }
 }
 .slide-right { animation: slide-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(24px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.slide-up { animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
 @keyframes track-in {
   from { opacity: 0; transform: translateY(6px); }
@@ -240,7 +235,7 @@ canvas { display: block; }
 }
 .page-enter { animation: page-enter 0.38s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
-/* Stagger — progressive delay, max 280ms */
+/* Stagger - progressive delay, max 280ms */
 .stagger > * { animation: fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .stagger > *:nth-child(1)  { animation-delay:  0ms; }
 .stagger > *:nth-child(2)  { animation-delay: 30ms; }
@@ -254,17 +249,17 @@ canvas { display: block; }
 .stagger > *:nth-child(10) { animation-delay:222ms; }
 .stagger > *:nth-child(n+11){ animation-delay:238ms; }
 
-/* Equalizer bars — smooth height + opacity transition on pause */
+/* Equalizer bars - smooth height + opacity transition on pause */
 @keyframes eq-bar {
   0%, 100% { transform: scaleY(0.2); }
   50%       { transform: scaleY(1); }
 }
 
-/* Lyrics scroller — hide the scrollbar entirely (no bar, no thumb) */
+/* Lyrics scroller - hide the scrollbar entirely (no bar, no thumb) */
 .lyrics-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .lyrics-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
-/* Album accordion on the artist page — animates open AND closed via grid rows */
+/* Album accordion on the artist page - animates open AND closed via grid rows */
 .album-collapse {
   display: grid;
   transition: grid-template-rows 0.24s cubic-bezier(0.16, 1, 0.3, 1);
@@ -277,23 +272,70 @@ canvas { display: block; }
   -webkit-backdrop-filter: none !important;
 }
 :root[data-noblur="1"] .glass-island { background: rgba(18, 18, 24, 0.94); }
-:root[data-noblur="1"] .glass-card   { background: rgba(18, 18, 24, 0.86); }
+:root[data-noblur="1"] /* Without a blur behind it, 7% white is a smear - the editing panels fall
+   back to the same solid the islands do. */
+:root[data-noblur="1"] .edit-dock,
+:root[data-noblur="1"] .glass-deep,
+:root[data-noblur="1"] .edit-opts   { background: rgba(18, 18, 24, 0.94); }
+:root[data-noblur="1"] .edit-banner { background: rgba(18, 18, 24, 0.9); }
 
-/* Marquee */
-.marquee-container { overflow: hidden; position: relative; }
-.marquee-text { display: inline-block; white-space: nowrap; }
-.marquee-text.overflow { animation: marquee 14s linear infinite; }
-@keyframes marquee {
-  0%,15%  { transform: translateX(0); }
-  85%,100%{ transform: translateX(var(--marquee-offset, -60px)); }
+/* The queue button stands aside while the editing mode is on: the dock owns
+   that corner then, and a control you cannot reach should not be sitting in
+   front of one you can. It animates rather than vanishing, so it reads as
+   stepping out of the way and back. */
+.corner-dock { transition: opacity 0.18s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+.corner-dock[data-away='true'] {
+  opacity: 0; transform: translateY(12px) scale(0.82); pointer-events: none;
 }
+/* The same step-aside for a control in a TOP corner, which has to leave
+   upward - the rule above was written for the two at the bottom and sent a
+   top-corner button down across the content on its way out. */
+.corner-dock[data-edge='top'][data-away='true'] { transform: translateY(-12px) scale(0.82); }
+
+/* ── the rail changing width ──────────────────────────────────────────── */
+
+/* A label inside the sidebar. It collapses and fades instead of popping, so
+   the only thing that visibly moves when the rail resizes is the width.
+ *
+ * The timing is deliberately asymmetric, and that is the whole trick: going
+ * narrow the text leaves at once, so it is gone before its space is; going
+ * wide it waits until the rail has opened, so it does not appear on top of
+ * itself halfway through the slide. Symmetric timing looks wrong in both
+ * directions at once. */
+.rail-label { overflow: hidden; white-space: nowrap; text-align: left; }
+.rail-label[data-hide='true'] {
+  opacity: 0; max-width: 0; flex: 0 0 0;
+  transition: opacity 0.10s ease, max-width 0.30s cubic-bezier(0.16, 1, 0.3, 1) 0.03s;
+}
+.rail-label[data-hide='false'] {
+  opacity: 1; max-width: 190px; flex: 1 1 auto;
+  /* Exactly the rail's own duration and curve. At 0.32s against the rail's
+     0.34s the two drivers of the label's width - this cap and the flex box
+     it sits in - finished at different moments, and the handover between
+     them put a change of speed near the end of every expand. */
+  transition: opacity 0.20s ease 0.13s, max-width 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* A fixed-size trailing label (a count) has no business growing to fill. */
+.rail-label.rail-label-tight[data-hide='false'] { flex: 0 0 auto; max-width: 48px; }
+
+/* Padding, gap and the rest glide with the width instead of snapping at the
+   instant a class changes. */
+.rail-fit {
+  transition: padding 0.34s cubic-bezier(0.16, 1, 0.3, 1),
+              gap 0.34s cubic-bezier(0.16, 1, 0.3, 1),
+              margin 0.34s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.26s ease, border-color 0.26s ease,
+              width 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+
+/* Marquee. The travel itself is set from Marquee.tsx, which is the only
+   place that knows how far the title actually overruns its box. */
+.marquee-box { overflow: hidden; }
+.marquee-run { display: inline-block; white-space: nowrap; }
 
 /* Settings panel slide */
-@keyframes panel-in {
-  from { opacity: 0; transform: translateX(24px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-.panel-in { animation: panel-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
 /* Accent color ripple on click */
 .ripple { position: relative; overflow: hidden; }
@@ -435,14 +477,6 @@ img { transition: opacity 0.3s ease; }
 .playlist-picker-backdrop.closing { animation: track-page-backdrop-out 0.22s ease both; }
 .playlist-picker-panel.closing    { animation: picker-out 0.22s ease both; }
 
-@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
-.fade-out { animation: fade-out 0.28s ease both; }
-
-/* Playlist search field reveal */
-@keyframes search-in {
-  from { opacity: 0; transform: translateX(-10px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
 .search-in { animation: search-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes search-out {
   from { opacity: 1; transform: translateX(0); }
@@ -461,11 +495,8 @@ img { transition: opacity 0.3s ease; }
 }
 
 /* ── Home horizontal rows ─────────────────────────────────────── */
-.row-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent; }
-.row-scroll::-webkit-scrollbar { height: 6px; }
-.row-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
-.row-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
-.row-scroll::-webkit-scrollbar-track { background: transparent; }
+
+
 
 /* ── Mini Player Drag ─────────────────────────────────────────── */
 /* Make the entire mini-player window draggable;
@@ -529,6 +560,405 @@ img { transition: opacity 0.3s ease; }
   transform: scale(1.2);
 }
 
+/* ── Colour channel slider ──────────────────────────────
+   Shared by the custom-accent R/G/B rows and the hue strip. The track picture
+   is handed in as --track (an inline gradient), so one rule covers every
+   channel instead of one rule per colour. The thumb is a white dot with a dark
+   halo, so it stays visible over both ends of any gradient it rides. */
+.chan-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 14px; background: transparent; outline: none; border: none; cursor: pointer;
+}
+.chan-slider::-webkit-slider-runnable-track {
+  height: 10px; border-radius: 5px;
+  background: var(--track, rgba(255,255,255,0.12));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14);
+}
+.chan-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px; margin-top: -2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(0,0,0,0.15);
+  transition: transform 0.12s ease;
+}
+.chan-slider::-webkit-slider-thumb:hover { transform: scale(1.14); }
+
+/* ── Sidebar tab add / remove ────────────────────────────
+   Toggling a tab must not make the rail jump: the row collapses its own height
+   so the tabs below slide into the gap instead of teleporting. The height runs
+   as grid-template-rows 1fr -> 0fr rather than max-height, because an fr row
+   collapses from exactly the content height - no guessed pixel ceiling to get
+   wrong when the row grows (a count badge, a longer label, compact mode).
+   The 2px gap between tabs is a margin on the button, i.e. inside the row's
+   content box, so it collapses away with the row. As padding on the wrapper it
+   would sit outside the row track and leave a 2px scar behind every removed
+   tab (measured: the row bottomed out at 2px instead of 0). flow-root keeps
+   that margin from escaping the wrapper and re-opening the same gap. */
+.nav-slot { display: grid; grid-template-rows: 1fr; }
+.nav-slot > * { min-height: 0; display: flow-root; }
+.nav-slot > * > * { margin-bottom: 2px; }
+/* Clipping is switched on only while a row animates. At rest the row is exactly
+   content height and there is nothing to clip, while a permanent overflow here
+   would cut the icon-btn glow off at the row edge - the one thing the rail must
+   never do. */
+.nav-slot.nav-in > *, .nav-slot.nav-out > * { overflow: hidden; }
+/* The row's height and the tab inside it are animated separately, offset by a
+   few frames. Driving both from one keyframe set made the tab snap into being
+   at the same instant the gap appeared, which read as an abrupt pop; splitting
+   them lets the rail open first and the tab arrive into the space it made.
+   On the way out the order reverses - the tab leaves, then the gap closes. */
+.nav-slot.nav-in    { animation: nav-slot-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.nav-slot.nav-in > * { animation: nav-tab-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) 0.08s backwards; }
+.nav-slot.nav-out    { animation: nav-slot-out 0.3s cubic-bezier(0.4, 0, 0.25, 1) 0.1s both; pointer-events: none; }
+.nav-slot.nav-out > * { animation: nav-tab-out 0.18s ease-in both; }
+@keyframes nav-slot-in  { from { grid-template-rows: 0fr; } to { grid-template-rows: 1fr; } }
+@keyframes nav-slot-out { from { grid-template-rows: 1fr; } to { grid-template-rows: 0fr; } }
+@keyframes nav-tab-in  { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+@keyframes nav-tab-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-10px); } }
+
+/* ── Seasonal snow ────────────────────────────────────────────
+   Sits over the whole window and never takes a click. Below the editing mode
+   so its controls stay reachable, above everything else so snow can settle on
+   the top edge of a panel the way it settles on a window sill. */
+.snow-layer {
+  position: fixed; inset: 0; z-index: 110; pointer-events: none;
+}
+
+/* Over the glass, like the snow: the bars are things the weather falls in
+   front of, not a roof. */
+.rain-layer {
+  position: fixed; inset: 0; z-index: 110; pointer-events: none;
+}
+
+/* The storm deck goes the other way - BEHIND every panel in the player, the
+   way the tree does, so the sidebar and the bars blur it instead of standing
+   in it. Full window, not a strip: a bolt reaches below the clouds and the
+   flash spills past them, and a canvas that stopped where the clouds do cut
+   both off along a straight line. */
+.rain-sky {
+  position: fixed; inset: 0;
+  z-index: 0; pointer-events: none;
+}
+
+/* Strung across the top, behind the glass as well - the sidebar and the bar
+   blur the light pooling behind them instead of hiding it. Only as tall as the
+   spill reaches, so it is not a second full-window canvas. */
+.garland-layer {
+  position: fixed; left: 0; right: 0; top: 0; height: 240px;
+  z-index: 0; pointer-events: none;
+}
+
+/* The tree stands BEHIND the glass on purpose: the sidebar blurs whatever
+   branches pass under it, and nothing the tree draws can ever sit on top of
+   something you are trying to click. */
+.tree-layer {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+}
+
+/* ── Editing mode ─────────────────────────────────────────────
+   The settings panel steps aside and the running player becomes the thing you
+   point at. The ring is drawn around the REAL sidebar, list and bar, so every
+   change is the finished result and not a picture of one. */
+/* No animation of its own, and that is load-bearing rather than tidy. An
+   element with a running animation becomes a BACKDROP ROOT: everything its
+   children filter through backdrop-filter is then taken from inside the
+   layer, which is empty - so the panels' blur quietly did nothing and the
+   player showed through them pin-sharp. Measured: the same card over the
+   same two buttons bled 199 levels with the fade here and 77 without it.
+   Nothing is lost by dropping it - the banner, the card and the dock each
+   animate themselves in and out already, and the ring fades below. */
+.edit-layer { position: fixed; inset: 0; z-index: 120; }
+
+/* Position and size come from a frame loop, so opacity is the only thing that
+   transitions here - a transition on the geometry would fight the loop. */
+.edit-ring {
+  position: fixed; top: 0; left: 0; pointer-events: none; opacity: 0;
+  border-radius: 18px; will-change: transform, width, height;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.85), 0 0 34px -6px rgba(var(--accent-rgb), 0.7);
+  transition: opacity 0.18s ease, box-shadow 0.25s ease;
+}
+.edit-layer.closing .edit-ring { opacity: 0 !important; }
+.edit-ring-hint {
+  box-shadow: 0 0 0 1.5px rgba(var(--accent-rgb), 0.45);
+  border-radius: 18px;
+}
+.edit-ring[data-picked='true'] {
+  box-shadow: 0 0 0 2.5px var(--accent), 0 0 48px -2px rgba(var(--accent-rgb), 0.8),
+              inset 0 0 0 1px rgba(var(--accent-rgb), 0.22);
+}
+
+/* How far this glass holds its backdrop down. Measured rather than guessed:
+   these panels are tall and they land on whatever the player is showing, and
+   a row of bright buttons behind a column of 12px labels is the case that
+   decides the number. */
+:root { --edit-floor: 0.2; --edit-dim: 0.78; }
+
+.edit-banner {
+  position: fixed; top: 14px; left: 50%; display: flex; align-items: center; gap: 10px;
+  /* Its own, not the animation's. The keyframes end on this same transform,
+     and while they filled forever that was enough to keep it centred - but a
+     fill that is released has to land on something, and without this the
+     pill jumped half its width to the right the moment it finished arriving. */
+  transform: translate(-50%, 0);
+  padding: 7px 7px 7px 15px; border-radius: 999px;
+  font-size: 13px; font-weight: 600; color: rgba(255, 255, 255, 0.9);
+  /* Glass, but over a base of its own - and that base is not decoration.
+     The pill sits at the top of the window, which is exactly where the
+     islands' lit top edge runs: a bright hairline straight through the text.
+     Blur alone only softens it into a band that still crosses the words, so
+     the backdrop is held down far enough that nothing structural behind can
+     be read through it. The panels below need no such thing - they sit over
+     open background, not over an edge. */
+  background:
+    linear-gradient(rgba(9, 9, 14, calc(var(--edit-floor) + 0.22)), rgba(9, 9, 14, calc(var(--edit-floor) + 0.22))),
+    rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(44px) saturate(175%) brightness(var(--edit-dim));
+  -webkit-backdrop-filter: blur(44px) saturate(175%) brightness(var(--edit-dim));
+  /* Its ring stays the accent's: this one is a status badge, not a panel. */
+  border: 1px solid rgba(var(--accent-rgb), 0.38);
+  box-shadow: 0 12px 38px -16px rgba(0, 0, 0, 0.95), 0 0 26px -10px rgba(var(--accent-rgb), 0.65);
+  animation: edit-banner-in 0.46s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+.edit-layer.closing .edit-banner { animation: edit-banner-out 0.24s ease both; }
+@keyframes edit-banner-in { from { opacity: 0; transform: translate(-50%, -170%); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes edit-banner-out { from { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -170%); } }
+.edit-banner-hint {
+  font-size: 11px; font-weight: 400; color: rgba(255, 255, 255, 0.4);
+  padding-left: 10px; margin-left: 2px; border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+.edit-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 10px var(--accent); animation: edit-pulse 1.9s ease-in-out infinite;
+}
+@keyframes edit-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+.edit-x {
+  width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.6);
+  transition: background 0.16s ease, color 0.16s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.edit-x:hover { background: var(--accent); color: #fff; transform: rotate(90deg); }
+.edit-x svg { width: 13px; height: 13px; }
+
+/* The card itself never clips: its name tag sits on the top border, half
+   outside the box, and an overflow here cut it in two. Scrolling lives on the
+   body instead. */
+.edit-opts {
+  position: fixed; padding: 12px; border-radius: 16px;
+  display: flex; flex-direction: column;
+  /* The same glass as the queue and the settings panel - see .glass-panel.
+     These two used a near-solid slab of their own, which looked like a
+     different application pasted over the player: the whole point of the
+     editing mode is that you are changing the thing you are looking at, and
+     a panel you cannot see through hides it. */
+  background:
+    linear-gradient(rgba(9, 9, 14, var(--edit-floor)), rgba(9, 9, 14, var(--edit-floor))),
+    rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(44px) saturate(175%) brightness(var(--edit-dim));
+  -webkit-backdrop-filter: blur(44px) saturate(175%) brightness(var(--edit-dim));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 20px 54px -24px rgba(0, 0, 0, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  animation: edit-card-in 0.38s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+@keyframes edit-card-in { from { opacity: 0; transform: translateX(-16px) scale(0.95); } to { opacity: 1; transform: none; } }
+/* Out the way it came in, shorter: closing wants to feel quicker than opening.
+   Held in the tree for the length of this by the `leaving` state, and on the
+   way out of the whole mode it leaves alongside the banner and the dock. */
+.edit-opts.leaving,
+.edit-layer.closing .edit-opts {
+  animation: edit-card-out 0.2s ease both; pointer-events: none;
+}
+@keyframes edit-card-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-10px) scale(0.96); } }
+/* The gutter is held open whether or not there is anything to scroll. The
+   rows arrive with a 9px rise, and a transformed box counts towards scrollable
+   overflow, so for the third of a second the entrance ran the card grew a
+   scrollbar it did not need, lost 3px of width, and everything in it reflowed
+   sideways and back - read as the card twitching as it opened. */
+.edit-opts-body { overflow-y: auto; min-height: 0; scrollbar-gutter: stable; }
+.edit-opts-head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.35); margin: 2px 0 7px 4px; }
+/* Air above every heading except the first one, so two groups in a card read
+   as two groups. The `mt-3` this replaces never applied: the rule above sets
+   the whole margin shorthand and lives after the utilities, so it won it. */
+.edit-opts-body > * + .edit-opts-head { margin-top: 20px; }
+.edit-opts-title {
+  position: absolute; top: -9px; left: 14px; font-size: 10px; font-weight: 600;
+  padding: 1px 9px; border-radius: 999px; background: var(--accent); color: #fff;
+}
+@keyframes edit-opt-in { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+.edit-opt-done {
+  width: 100%; margin-top: 8px; padding: 7px; border-radius: 11px; font-size: 12px;
+  background: rgba(255, 255, 255, 0.07); color: rgba(255, 255, 255, 0.7);
+  /* Fades, where the rows rise. It is the last thing in the card and it sits
+     at the bottom edge, so a rise from below put it furthest out of the body
+     and made it the one that dragged the scrollbar in. */
+  animation: edit-fade-in 0.26s ease backwards;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+@keyframes edit-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.edit-opt-done:hover { background: rgba(255, 255, 255, 0.13); color: #fff; }
+
+/* The side panel holds everything that repaints the whole window, so it is a
+   panel now rather than the narrow strip of swatches it started as. It hangs
+   from the top and is as tall as what is in it - stretched to the bottom edge
+   it was mostly empty panel, and a sheet of blur over most of the window is a
+   lot of nothing to look at. The cap is there for the day it outgrows the
+   screen; it scrolls then. */
+.edit-dock {
+  position: fixed; right: 14px; top: 64px; width: 268px;
+  /* Stops short of the palette button in the same corner. It used to run to
+     the bottom of the window and cover it, and since this panel is glass the
+     button did not hide behind it - it showed through, a bright disc sitting
+     on top of the controls. The floor depends on where that button is, which
+     the player style decides, so the Dock passes it in. */
+  max-height: calc(100vh - var(--dock-floor, 144px));
+  padding: 12px 10px; border-radius: 18px;
+  display: flex; flex-direction: column; gap: 2px;
+  overflow-y: auto; overscroll-behavior: contain;
+  background:
+    linear-gradient(rgba(9, 9, 14, var(--edit-floor)), rgba(9, 9, 14, var(--edit-floor))),
+    rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(60px) saturate(180%) brightness(var(--edit-dim));
+  -webkit-backdrop-filter: blur(60px) saturate(180%) brightness(var(--edit-dim));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 20px 54px -24px rgba(0, 0, 0, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  animation: edit-dock-in 0.44s cubic-bezier(0.16, 1, 0.3, 1) 70ms backwards;
+}
+@keyframes edit-dock-in { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+.edit-layer.closing .edit-dock { animation: edit-dock-out 0.22s ease both; }
+@keyframes edit-dock-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(28px); } }
+/* The editing dock's surface on its own, for panels that want the same
+   depth without being the dock. glass-island is the lighter sibling: the
+   difference is the dark floor underneath the white film, which is what
+   keeps small text readable when a bright cover art is passing behind. */
+.glass-deep {
+  background:
+    linear-gradient(rgba(9, 9, 14, var(--edit-floor)), rgba(9, 9, 14, var(--edit-floor))),
+    rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(60px) saturate(180%) brightness(var(--edit-dim));
+  -webkit-backdrop-filter: blur(60px) saturate(180%) brightness(var(--edit-dim));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 20px 54px -24px rgba(0, 0, 0, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+.edit-dock-title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.3); margin: 2px 4px 8px;
+}
+/* A section that is not worth a drawer. Carries the fold's own heading and
+   body metrics so an open fold and a plain section line up in one column. */
+.edit-dock-head { font-size: 12.5px; font-weight: 500; color: rgba(255, 255, 255, 0.8); padding: 9px 10px 7px; }
+.edit-dock-body { padding: 0 10px 10px; }
+.edit-fold { border-radius: 12px; transition: background 0.2s ease; }
+.edit-fold[data-open='true'] { background: rgba(255, 255, 255, 0.035); }
+.edit-fold-head {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px; border-radius: 12px; text-align: left;
+  color: rgba(255, 255, 255, 0.8); transition: background 0.16s ease, color 0.16s ease;
+}
+.edit-fold-head:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+/* One line each. Two-line headings in a narrow column read as a paragraph,
+   not as a heading, and the chevron drifts away from the text it belongs to. */
+.edit-fold-label {
+  font-size: 12.5px; font-weight: 500; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.edit-fold-note {
+  font-size: 11px; color: rgba(255, 255, 255, 0.35); flex-shrink: 0;
+  max-width: 44%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.edit-fold-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.edit-fold-chev {
+  width: 14px; height: 14px; flex-shrink: 0; color: rgba(255, 255, 255, 0.3);
+  transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.edit-fold[data-open='true'] > .edit-fold-head .edit-fold-chev { transform: rotate(180deg); }
+/* Row height from 1fr to 0fr, the same collapse the rail uses: the section is
+   exactly as tall as its contents and no pixel ceiling has to be guessed. */
+.edit-fold-body {
+  display: grid; grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.edit-fold[data-open='true'] > .edit-fold-body { grid-template-rows: 1fr; }
+.edit-fold > .edit-fold-body > * { min-height: 0; overflow: hidden; }
+/* The two phases are offset, the way the rail's rows do it: opening clears
+   the space first and the contents arrive into it ~80ms later; closing runs
+   the other way round, the contents leave and then the gap shuts. Both at
+   once reads as a snap, not as a drawer. */
+.edit-fold > .edit-fold-body > * > * {
+  padding: 2px 10px 11px;
+  opacity: 0; transform: translateY(-6px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.edit-fold[data-open='true'] > .edit-fold-body > * > * {
+  opacity: 1; transform: none;
+  transition: opacity 0.24s ease 0.08s, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.08s;
+}
+/* A fold inside a fold, for a group that has grown its own groups. One notch
+   smaller and no fill of its own, so three of them inside an open section read
+   as a list of headings and not as boxes inside a box. All of the rules above
+   are scoped to a fold's OWN head and body for the same reason: written as
+   descendants, opening the outer section unrolled every section inside it. */
+.edit-fold-sub > .edit-fold-head { padding: 7px 8px; }
+.edit-fold-sub .edit-fold-label { font-size: 12px; }
+.edit-fold-sub[data-open='true'] { background: rgba(255, 255, 255, 0.045); }
+.edit-fold-sub > .edit-fold-body > * > * { padding: 2px 8px 10px; }
+/* A heading for a season that is not built yet: it says so, and it does not
+   pretend to be a button about to open. */
+.edit-fold[data-soon='true'] > .edit-fold-head { cursor: default; }
+.edit-fold[data-soon='true'] > .edit-fold-head:hover { background: transparent; }
+.edit-fold[data-soon='true'] .edit-fold-label { color: rgba(255, 255, 255, 0.38); }
+.edit-fold-soon {
+  flex-shrink: 0; font-size: 9px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; padding: 2px 6px 1px; border-radius: 999px;
+  color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.07);
+}
+/* A lone switch standing in the headings' column - see FoldSwitch. */
+.edit-fold-flat {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px;
+  color: rgba(255, 255, 255, 0.8);
+}
+.edit-fold-flat .edit-fold-label { font-size: 12px; }
+/* The detailed knobs, set apart from the switches above them: its own ground
+   and its own hairline, so it reads as a drawer inside the drawer rather than
+   as three more rows of the same list. */
+.edit-adv {
+  margin-top: 6px; padding: 9px 10px 11px; border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.edit-adv-head {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.09em;
+  color: rgba(255, 255, 255, 0.3); margin-bottom: 9px;
+}
+/* The head shares its line with a Reset, so the gap below belongs to the
+   row and not to the label inside it. */
+.edit-adv-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 9px;
+}
+.edit-adv-top .edit-adv-head { margin-bottom: 0; }
+
+/* The entrance lives on a wrapper: an animation with fill holds the final
+   transform, which would otherwise swallow the swatch's hover scale. */
+.edit-sw {
+  width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+.edit-sw:hover { transform: scale(1.15); }
+.edit-sw[data-on='true'] { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85); transform: scale(1.15); }
+
 /* Utility */
 .bg-white\/4  { background: rgba(255,255,255,0.04); }
 .bg-white\/7  { background: rgba(255,255,255,0.07); }
@@ -536,3 +966,420 @@ img { transition: opacity 0.3s ease; }
 .border-white\/7 { border-color: rgba(255,255,255,0.07); }
 .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .line-clamp-4 { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ── First run ────────────────────────────────────────────────────────────
+   A draft. See-through on purpose: the player is already running behind it,
+   and picking an accent against a mockup of the player instead of the player
+   is how onboarding ends up lying about what you chose. */
+.wc-layer {
+  position: fixed; inset: 0; z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 7, 12, 0.72);
+  backdrop-filter: blur(14px) saturate(130%); -webkit-backdrop-filter: blur(14px) saturate(130%);
+  animation: wc-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.wc-layer.leaving { animation: wc-out 0.3s ease both; }
+@keyframes wc-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wc-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* Three fixed bands, so nothing jumps as the slides change under it. */
+.wc-sheet {
+  width: min(560px, calc(100vw - 48px));
+  /* A fixed frame, like the what's new deck next door and for the same
+     reason: the slides are different heights - three language buttons on
+     one, a column of switches on another - so a sheet sized to its
+     contents grew and shrank on every step, and the artwork above and the
+     footer below slid about with it. The middle row takes the slack. */
+  height: min(620px, calc(100vh - 80px));
+  display: grid; grid-template-rows: 150px 1fr 64px;
+  padding: 10px 4px 0;
+}
+.wc-hero { display: flex; align-items: center; justify-content: center; }
+/* Up through the middle and out the top: the words hand over to each other
+   rather than each taking a turn on an empty stage. */
+
+.wc-body {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  animation: wc-slide 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* The one row that gives, and the one that scrolls when a slide asks for
+     more than the frame has. `safe` centring keeps a tall slide reachable:
+     plain centring pushes its top out of its own scroller. */
+  min-height: 0; overflow-y: auto; justify-content: safe center;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.wc-body::-webkit-scrollbar { width: 0; height: 0; display: none; }
+@keyframes wc-slide { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.wc-title { font-size: 21px; font-weight: 600; color: #fff; }
+/* Two lines' worth of room whether or not the sentence needs it. The same
+   line is one line in Russian and two in English, so without a floor the
+   whole step below it - flags, dots, Next - jumped as the language
+   changed, which on the language step is the one thing you are looking
+   at. */
+.wc-sub {
+  font-size: 13px; color: rgba(255, 255, 255, 0.45); margin-top: 7px;
+  max-width: 420px; line-height: 1.45; min-height: calc(2 * 1.45em);
+}
+
+/* Three now, so they are narrower - the flag and the code carry it, the
+   width was never doing any work. */
+.wc-langs { display: flex; gap: 10px; margin-top: 26px; }
+.wc-lang {
+  width: 100px; padding: 14px 8px; border-radius: 14px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.6); transition: all 0.16s ease;
+}
+.wc-lang[data-on='true'] {
+  background: rgba(var(--accent-rgb), 0.18); border-color: rgba(var(--accent-rgb), 0.5); color: #fff;
+}
+
+/* The account's own face, so the first slide is proof of the sign-in rather
+   than a greeting to nobody. */
+.wc-ava {
+  width: 56px; height: 56px; border-radius: 50%; object-fit: cover; margin-bottom: 14px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12), 0 8px 24px -10px rgba(0, 0, 0, 0.8);
+}
+
+/* Where to start. Wrapped rather than a grid: five names of different
+   lengths in equal cells leave holes. */
+.wc-pages { display: flex; flex-wrap: wrap; gap: 9px; justify-content: center; margin-top: 24px; max-width: 430px; }
+.wc-page {
+  padding: 10px 18px; border-radius: 12px; font-size: 13px;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.6); transition: all 0.16s ease;
+}
+.wc-page[data-on='true'] {
+  background: rgba(var(--accent-rgb), 0.18); border-color: rgba(var(--accent-rgb), 0.5); color: #fff;
+}
+
+/* The accent, as one row among the switches. Small on purpose - it is the
+   one thing here that is two clicks away at any other time. */
+.wc-haul { color: rgba(255, 255, 255, 0.6); font-variant-numeric: tabular-nums; }
+
+.wc-opts { width: 100%; max-width: 380px; margin-top: 22px; display: flex; flex-direction: column; gap: 2px; }
+.wc-opt {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 11px 14px; border-radius: 12px; font-size: 13.5px; color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ── the editing-mode drawing ──────────────────────────────────────────
+   Sized against the slide, not against the real window: it has to read as
+   a diagram of the player at a glance, so the proportions are the ones
+   that stay legible at 300px rather than the ones that are true. */
+.wc-sketch { position: relative; width: 300px; margin-top: 18px; }
+.wc-sketch-new {
+  position: absolute; top: -7px; left: -7px; z-index: 2;
+  background: var(--accent); color: #fff; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em; padding: 2px 8px; border-radius: 999px;
+}
+.wc-sketch-win {
+  position: relative;
+  display: flex; gap: 6px; height: 132px; padding: 9px; box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.025); border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9px;
+}
+.wc-sk-rail {
+  width: 26px; border-radius: 6px; background: rgba(255, 255, 255, 0.045);
+  display: flex; flex-direction: column; align-items: center; gap: 7px; padding-top: 9px;
+}
+.wc-sk-rail span { width: 11px; height: 11px; border-radius: 3px; }
+.wc-sk-main {
+  flex: 1; border-radius: 6px; background: rgba(255, 255, 255, 0.03);
+  padding: 9px; display: flex; flex-direction: column; gap: 6px;
+}
+.wc-sk-main span { height: 7px; border-radius: 3px; }
+/* Floating over the page, not a column beside it - which is what it does
+   in the real thing: the content runs the full width of the window and
+   the panel sits on top of its right-hand end. As a third column it both
+   lied about the layout and squeezed the page into a strip.
+
+   It never wears the ring either: it is the thing doing the changing,
+   not a thing that can be changed. */
+.wc-sk-dock {
+  position: absolute; top: 9px; right: 9px; width: 62px; height: 74px;
+  border-radius: 7px; padding: 8px 7px; box-sizing: border-box;
+  background: rgba(var(--accent-rgb), 0.12); border: 1px solid rgba(var(--accent-rgb), 0.3);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.wc-sk-lbl { height: 6px; width: 70%; border-radius: 3px; background: rgba(var(--accent-rgb), 0.5); }
+.wc-sk-dots { display: flex; gap: 4px; }
+.wc-sk-dots i { width: 11px; height: 11px; border-radius: 50%; background: rgba(255, 255, 255, 0.16); }
+.wc-sk-row { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); }
+.wc-sketch-try {
+  display: block; margin: 13px auto 0; padding: 7px 17px; border-radius: 999px;
+  font-size: 12px; font-weight: 500; color: #fff;
+  background: rgba(var(--accent-rgb), 0.16); border: 1px solid rgba(var(--accent-rgb), 0.45);
+  transition: all 0.16s ease;
+}
+.wc-sketch-try:hover { background: rgba(var(--accent-rgb), 0.26); border-color: rgba(var(--accent-rgb), 0.7); }
+.wc-sketch-try:active { transform: scale(0.97); }
+
+/* Settings controls on a slide. The slide centres its text; these are
+   rows with labels on the left and switches on the right, and they read
+   as broken centred - same left edge as in the panel they came from. */
+.wc-lyrics { margin-top: 26px; width: 100%; max-width: 420px; text-align: left; }
+
+
+/* Three columns, so the dots stay dead centre whether or not Back is there
+   - as a flex row they slid left and right as it came and went. */
+.wc-foot { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 6px; }
+.wc-foot-l { justify-self: start; }
+.wc-foot-r { justify-self: end; }
+.wc-dots { display: flex; gap: 7px; }
+.wc-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18); transition: all 0.22s ease;
+}
+.wc-dot[data-on='true'] { background: var(--accent); width: 18px; border-radius: 3px; }
+.wc-back {
+  padding: 9px 14px; border-radius: 11px; font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.4); transition: color 0.16s ease;
+}
+.wc-back:hover { color: rgba(255, 255, 255, 0.75); }
+/* ── what's new ───────────────────────────────────────────────────────
+   Not the three fixed bands of the first run: there are no slides to keep
+   from jumping, so this one is simply as tall as what it has to say. */
+.nw-sheet {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 26px 22px 10px; position: relative;
+  /* A fixed frame, not one that follows its contents.
+     The slides are wildly different sizes - a paragraph on one, the whole
+     timing section with its download on another - so a sheet sized to them
+     changed height on every step, and the title, the strip of names and
+     the footer all slid up and down with it. Now only the middle moves,
+     and the furniture around it stays where your eye left it. */
+  height: min(620px, calc(100vh - 80px));
+  overflow: hidden;
+  /* Scrolls, but without saying so. The card floats on glass with nothing
+     behind it to anchor a bar against, so the bar read as a scratch down
+     the middle of the screen. Same treatment as the lyrics scroller. */
+  scrollbar-width: none; -ms-overflow-style: none;
+  animation: wc-slide 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.nw-sheet::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.nw-ver {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  color: var(--accent); margin-bottom: 8px; font-variant-numeric: tabular-nums;
+}
+/* ── the strip of slide names ──
+   A window with the strip inside it, slid so the active name sits on the
+   centre line. Everything in the strip is one size and the active one is
+   scaled up: changing the font size would move every name beside it, so
+   the offset measured a frame ago would already be wrong - which showed
+   as the whole strip twitching on every step. */
+.nw-strip-win { position: relative; height: 42px; width: 100%; overflow: hidden; margin-top: 2px; }
+.nw-strip {
+  position: absolute; left: 50%; top: 50%;
+  display: flex; align-items: center; gap: 26px; white-space: nowrap;
+  transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.nw-name {
+  font-size: 19px; font-weight: 600; transform-origin: center;
+  color: rgba(255, 255, 255, 0.3); transform: scale(0.62); opacity: 0;
+  transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1), color 0.42s ease, opacity 0.42s ease;
+}
+/* Only the neighbours are drawn. Further out the strip fades rather than
+   running off the edge, so it reads as a reel and not as a cut-off list. */
+.nw-name[data-near='true'] { opacity: 1; }
+.nw-name[data-on='true'] { color: #fff; transform: scale(1); opacity: 1; }
+
+.nw-body {
+  display: flex; flex-direction: column; align-items: center;
+  animation: wc-slide 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* The one part that takes the slack, and the one part that scrolls when
+     a slide has more in it than there is room for. */
+  flex: 1; min-height: 0; width: 100%; overflow-y: auto;
+  /* Centred when a slide is short, so the paragraph sits in the middle of
+     the frame rather than clinging to its top edge. `safe` is what stops
+     the old flex trap: plain centring pushes a too-tall slide past the top
+     of its own scroller, where it cannot be scrolled back to. */
+  justify-content: safe center;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.nw-body::-webkit-scrollbar { width: 0; height: 0; display: none; }
+/* Pinned against a body that can scroll under them. */
+.nw-ver, .nw-strip-win, .nw-sheet > .wc-foot { flex: none; }
+.nw-p { font-size: 13px; color: rgba(255, 255, 255, 0.5); max-width: 400px; line-height: 1.45; }
+/* Controls lifted out of settings keep their own widths, so they get a
+   column rather than the slide's centre line. */
+.nw-ctl { margin-top: 18px; width: 100%; max-width: 360px; text-align: left; }
+.nw-ctl-wide { max-width: 420px; }
+
+/* The footer is a three-column grid, which only centres the dots if it is
+   given the width to do it in. The first run hands it one, being a grid of
+   fixed rows; this sheet is a centred flex column, so without this the
+   footer shrank to its own contents and back, dots and Next ended up
+   shoulder to shoulder in the middle. */
+.nw-sheet .wc-foot {
+  width: 100%; margin-top: 30px; padding-bottom: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 16px;
+}
+.nw-sheet .wc-dots { gap: 9px; }
+
+.wc-next {
+  padding: 10px 26px; border-radius: 12px; font-size: 13px; font-weight: 600;
+  background: var(--accent); color: #fff;
+  transition: transform 0.14s ease, filter 0.16s ease;
+}
+.wc-next:hover { filter: brightness(1.1); }
+.wc-next:active { transform: scale(0.96); }
+/* The baked morph. Width-led: the loop is 1790x420, so a band tall enough for
+   it would be most of the screen - it is the greeting, not the subject. */
+.wc-morph { width: 100%; max-width: 520px; height: auto; display: block; }
+.wc-opt-label { display: inline-flex; align-items: center; gap: 8px; }
+/* Small enough to be a note, not a sticker. */
+.wc-badge {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 2px 6px 1px; border-radius: 999px;
+  color: var(--accent); background: rgba(var(--accent-rgb), 0.16);
+}
+.wc-opts-tight { margin-top: 16px; max-width: 430px; }
+.wc-note { font-size: 10px; color: rgba(255, 255, 255, 0.3); }
+/* Held by the rain. A veil laid over the whole row, not a word tucked in
+   beside the label: what is unavailable is the row, and saying so across it
+   needs no squeezing. The veil takes the clicks itself, so nothing under it
+   has to know it is disabled. */
+
+/* ── The date the seasons read ─────────────────────────────────────────── */
+.date-set { width: 100%; max-width: 380px; margin-top: 18px; }
+.date-now { font-size: 13.5px; color: rgba(255, 255, 255, 0.7); }
+.date-now b { color: #fff; font-weight: 600; }
+.date-hint { font-size: 11.5px; color: rgba(255, 255, 255, 0.35); margin-top: 4px; }
+.date-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.date-input {
+  flex: 1; padding: 9px 12px; border-radius: 11px; font-size: 13px;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff; color-scheme: dark;
+}
+.date-input:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.5); }
+.date-reset {
+  padding: 9px 13px; border-radius: 11px; font-size: 12px; white-space: nowrap;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6); transition: color 0.16s ease, background 0.16s ease;
+}
+.date-reset:hover { background: rgba(255, 255, 255, 0.11); color: #fff; }
+
+/* The branch hangs behind every panel, like the storm deck: the sidebar and
+   the bars blur it rather than standing in front of a picture. Its petals go
+   the other way, over the glass with the snow and the rain. */
+.sakura-branch {
+  position: fixed; inset: 0;
+  z-index: 0; pointer-events: none;
+}
+.sakura-petals {
+  position: fixed; inset: 0;
+  z-index: 110; pointer-events: none;
+}
+
+/* The night sky is the background, not something over it: behind every panel,
+   and it paints the whole window itself. */
+.night-sky {
+  position: fixed; inset: 0;
+  z-index: 0; pointer-events: none;
+}
+
+/* ── settings search ──────────────────────────────────────────────────────
+   The field above the tabs, and the list that takes over the content pane
+   while it has something in it. */
+
+.set-find {
+  display: flex; align-items: center; gap: 6px;
+  height: 30px; margin-bottom: 10px; padding: 0 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.18s, border-color 0.18s;
+}
+.set-find:focus-within,
+.set-find[data-on='true'] {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(var(--accent-rgb), 0.45);
+}
+.set-find-ic { width: 13px; height: 13px; flex-shrink: 0; color: rgba(255, 255, 255, 0.35); transition: color 0.18s; }
+.set-find:focus-within .set-find-ic { color: var(--accent); }
+.set-find input {
+  flex: 1; min-width: 0;
+  background: none; border: none; outline: none;
+  font-size: 12px; color: #fff;
+}
+.set-find input::placeholder { color: rgba(255, 255, 255, 0.3); }
+.set-find-x {
+  flex-shrink: 0; width: 15px; height: 15px; padding: 2px;
+  border-radius: 50%; color: rgba(255, 255, 255, 0.35);
+  transition: color 0.15s, background 0.15s;
+}
+.set-find-x:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+.set-find-x svg { width: 100%; height: 100%; }
+
+.set-res { display: flex; flex-direction: column; gap: 2px; }
+.set-res-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 8px 10px;
+  border-radius: 10px; text-align: left;
+  /* No transition on the background: the cursor travels with the arrow keys
+     as well as the mouse, and a fade meant two rows looked lit at once. */
+  background: transparent;
+  box-shadow: inset 0 0 0 0 transparent;
+}
+.set-res-row[data-on='true'] {
+  background: rgba(var(--accent-rgb), 0.11);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.3);
+}
+.set-res-ic { flex-shrink: 0; display: flex; color: rgba(255, 255, 255, 0.3); transition: color 0.15s; }
+.set-res-row[data-on='true'] .set-res-ic { color: var(--accent); }
+.set-res-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.set-res-lbl { font-size: 12.5px; color: rgba(255, 255, 255, 0.88); }
+/* The piece that was typed. A mark element rather than a span so the meaning
+   survives in the markup, with the browser's own yellow taken off it. */
+.set-res-lbl mark {
+  background: none; color: var(--accent); font-weight: 600;
+}
+.set-res-crumb {
+  font-size: 10px; color: rgba(255, 255, 255, 0.33);
+  margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.set-res-val {
+  flex-shrink: 0; font-size: 10.5px; color: rgba(255, 255, 255, 0.4);
+  max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.set-res-go { flex-shrink: 0; width: 13px; height: 13px; color: rgba(255, 255, 255, 0.25); }
+
+/* A switch at result size, read-only: it says what the setting is set to, and
+   the click goes to the row, not to this. */
+.set-res-sw {
+  flex-shrink: 0; position: relative;
+  width: 24px; height: 14px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 0.18s;
+}
+.set-res-sw[data-on='true'] { background: rgba(var(--accent-rgb), 0.55); }
+.set-res-sw i {
+  position: absolute; top: 2px; left: 2px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), background 0.18s;
+}
+.set-res-sw[data-on='true'] i { transform: translateX(10px); background: #fff; }
+
+.set-find-none {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 4px; padding: 56px 20px; text-align: center;
+}
+.set-find-none svg { width: 26px; height: 26px; color: rgba(255, 255, 255, 0.16); margin-bottom: 6px; }
+.set-find-none p { font-size: 13px; color: rgba(255, 255, 255, 0.5); }
+.set-find-none span { font-size: 11px; color: rgba(255, 255, 255, 0.28); }
+
+/* Landing. The row the result pointed at lights up once and goes quiet - long
+   enough to find with the eye after a scroll, short enough not to sit there
+   demanding attention it no longer needs. */
+.set-flash {
+  animation: set-flash 1.3s ease-out;
+  border-radius: 10px;
+}
+@keyframes set-flash {
+  0%   { background: rgba(var(--accent-rgb), 0); box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0); }
+  18%  { background: rgba(var(--accent-rgb), 0.16); box-shadow: 0 0 0 6px rgba(var(--accent-rgb), 0.1); }
+  100% { background: rgba(var(--accent-rgb), 0); box-shadow: 0 0 0 10px rgba(var(--accent-rgb), 0); }
+}

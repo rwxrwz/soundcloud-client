@@ -11,12 +11,17 @@ interface Props {
 }
 
 export function TrackActions({ track, alwaysVisible }: Props) {
-  const { likes, likeTrackOptimistic, unlikeTrackOptimistic } = useProfile()
+  /* A boolean, not the array. Selecting `likes` meant this component
+     woke on every profile write and then walked up to 1700 entries to
+     answer one yes/no - per row, per render. The selector answers the
+     question itself, so an unrelated profile change no longer reaches
+     here at all. */
+  const isLiked = useProfile(s => s.likes.some(x => Number(x.id) === Number(track.id)))
+  const { likeTrackOptimistic, unlikeTrackOptimistic } = useProfile.getState()
   const { setPlaylistPickerTrack } = useUI()
   const { show: showToast } = useToast()
   const t = useT()
   const accentHex = useAccentHex()
-  const isLiked = likes.some(t => Number(t.id) === Number(track.id))
 
   const [justAdded, setJustAdded] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -41,9 +46,7 @@ export function TrackActions({ track, alwaysVisible }: Props) {
 
   const handleAddToQueue = (e: React.MouseEvent) => {
     e.stopPropagation()
-    const { queue, queueIndex } = usePlayer.getState()
-    const insertAt = queueIndex + 1
-    usePlayer.setState({ queue: [...queue.slice(0, insertAt), track, ...queue.slice(insertAt)] })
+    usePlayer.getState().queueNext(track)
     showToast(`${t('toastQueued')}: ${track.title}`, 'info')
     setJustAdded(true)
     if (timerRef.current) clearTimeout(timerRef.current)

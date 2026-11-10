@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useUI, usePlayer, useToast, useProfile } from '../store'
 import { sc, SCPlaylist } from '../services/soundcloud'
 import { playlistCache } from '../services/playlistCache'
 import { encodePlaylist, encodePlaylistText } from '../services/playlistShare'
 import { ConfirmDialog } from './ConfirmDialog'
+import { useMenuAnchor } from './menuAnchor'
 import { useT } from '../i18n'
+import { Ico, IcoStroke } from './menuIcons'
 
 export function PlaylistContextMenu() {
   const { playlistMenu, setPlaylistMenu, setSelectedPlaylist, selectedPlaylist, backFromPlaylist } = useUI()
@@ -13,46 +15,14 @@ export function PlaylistContextMenu() {
   const { show: showToast } = useToast()
   const { user, removeLocalPlaylist, renameLocalPlaylist, setPlaylists, likedPlaylists, setLikedPlaylists } = useProfile()
   const t = useT()
-  const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ x: 0, y: 0 })
+  const { data, ref, style } = useMenuAnchor(playlistMenu, () => setPlaylistMenu(null))
   const [delTarget, setDelTarget] = useState<SCPlaylist | null>(null)
   const [delBusy, setDelBusy] = useState(false)
   const [renameTarget, setRenameTarget] = useState<SCPlaylist | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
 
-  useEffect(() => {
-    if (!playlistMenu) return
-    const el = ref.current
-    let x = playlistMenu.x, y = playlistMenu.y
-    if (el) {
-      const r = el.getBoundingClientRect()
-      if (x + r.width > window.innerWidth) x = window.innerWidth - r.width - 8
-      if (y + r.height > window.innerHeight) y = window.innerHeight - r.height - 8
-    }
-    setPos({ x, y })
-  }, [playlistMenu])
-
-  useEffect(() => {
-    if (!playlistMenu) return
-    const close = () => setPlaylistMenu(null)
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    const id = requestAnimationFrame(() => {
-      window.addEventListener('click', close)
-      window.addEventListener('contextmenu', close)
-      window.addEventListener('resize', close)
-      window.addEventListener('keydown', onKey)
-    })
-    return () => {
-      cancelAnimationFrame(id)
-      window.removeEventListener('click', close)
-      window.removeEventListener('contextmenu', close)
-      window.removeEventListener('resize', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [playlistMenu, setPlaylistMenu])
-
-  const pl = playlistMenu?.playlist
+  const pl = data?.playlist
 
   const handleDelete = async () => {
     const target = delTarget
@@ -177,15 +147,8 @@ export function PlaylistContextMenu() {
     menu = (
       <div
         ref={ref}
-        className="fixed z-[200] px-1.5 py-1.5 rounded-xl"
-        style={{
-          top: pos.y, left: pos.x, minWidth: 230,
-          background: 'rgba(20,20,26,0.97)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(20px)',
-          animation: 'scale-in 0.12s ease',
-        }}
+        className="glass-panel fixed z-[200] px-1.5 py-1.5 rounded-xl"
+        style={{ ...style, minWidth: 230 }}
         onClick={e => e.stopPropagation()}
       >
         {/* Playlist info header */}
@@ -199,7 +162,7 @@ export function PlaylistContextMenu() {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold text-white/90 truncate">{pl.title}</p>
-            <p className="text-[11px] text-white/40 truncate">{t('byAuthor')} {pl.user?.username || '—'}</p>
+            <p className="text-[11px] text-white/40 truncate">{t('byAuthor')} {pl.user?.username || '-'}</p>
             <div className="flex items-center gap-2 mt-1 text-[10px] text-white/45">
               <span>{pl.track_count} {t('tracksWord')}</span>
               <span>·</span>
@@ -284,9 +247,3 @@ export function PlaylistContextMenu() {
   )
 }
 
-function Ico({ children }: { children: React.ReactNode }) {
-  return <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">{children}</svg>
-}
-function IcoStroke({ children }: { children: React.ReactNode }) {
-  return <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
-}

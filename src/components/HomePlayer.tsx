@@ -7,6 +7,7 @@ import { audioBus } from '../hooks/audioBus'
 import { Slider } from './Slider'
 import { TrackActions } from './TrackActions'
 import { LyricsView } from './LyricsView'
+import { Marquee } from './Marquee'
 import { useT } from '../i18n'
 
 function fmt(s: number): string {
@@ -18,7 +19,7 @@ function fmt(s: number): string {
 export function HomePlayer() {
   const { currentTrack, isPlaying, progress, duration, setPlaying, nextTrack, prevTrack, shuffle, repeat, toggleShuffle, toggleRepeat, seekTo } = usePlayer()
   const { artRgb, setPage, goToPlaylists, setShowTrackPage, setArtistPage, setContextMenu } = useUI()
-  const { fsLayout, fsShowLyrics, fsBeatGlow, fsArtCrossfade, lyricsFontScale } = useSettings()
+  const { fsLayout, fsShowLyrics, lyricsFontScale } = useSettings()
   const accentHex = useAccentHex()
   const t = useT()
   const [local, setLocal] = useState<number | null>(null)
@@ -70,18 +71,20 @@ export function HomePlayer() {
 
   const art = (className: string, style?: React.CSSProperties) => (
     <ArtworkBox artwork={artwork} className={className} style={style} baseGlow={glow}
-      beatGlow={fsBeatGlow} crossfade={fsArtCrossfade} glowRgb={artRgb}
+      beatGlow crossfade glowRgb={artRgb}
       onClick={() => setShowTrackPage(true)}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track: currentTrack }) }} />
   )
 
   const titleEl = (
-    <div className="max-w-full min-w-0">
-      <p className="text-xl font-bold text-white max-w-full truncate px-2">{currentTrack.title}</p>
+    <div className="max-w-full min-w-0 px-2">
+      {/* The padding sits out here: the box measures its own clientWidth,
+          which would count it as room the title has and does not. */}
+      <Marquee className="text-xl font-bold text-white">{currentTrack.title}</Marquee>
       <button
         onClick={() => currentTrack.user && setArtistPage(currentTrack.user)}
         disabled={!currentTrack.user}
-        className="text-sm text-white/45 mt-1 max-w-full truncate px-2 hover:text-white/80 transition-colors disabled:hover:text-white/45"
+        className="text-sm text-white/45 mt-1 max-w-full truncate hover:text-white/80 transition-colors disabled:hover:text-white/45"
       >
         {currentTrack.user?.username}
       </button>
@@ -102,11 +105,19 @@ export function HomePlayer() {
     <div className="flex items-center justify-center gap-5">
       <button onClick={toggleShuffle} title="Shuffle"
         style={{ color: shuffle ? accentHex : 'rgba(255,255,255,0.45)' }}
-        className="hover:scale-110 transition-transform">
+        className="relative hover:scale-110 transition-transform">
         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="16 3 21 3 21 8" /><line x1="4" y1="20" x2="21" y2="3" />
           <polyline points="21 16 21 21 16 21" /><line x1="15" y1="15" x2="21" y2="21" />
         </svg>
+        {shuffle && (
+          /* The same dot the bottom bar puts under an engaged control. A
+             tint alone is easy to miss on an accent the person chose to be
+             quiet, and two places showing one state should show it the
+             same way. */
+          <span className="absolute left-1/2 -translate-x-1/2 rounded-full"
+            style={{ bottom: -4, width: 3, height: 3, background: accentHex }} />
+        )}
       </button>
       <button onClick={prevTrack} className="text-white/80 hover:scale-110 transition-transform">
         <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" /></svg>
@@ -129,6 +140,14 @@ export function HomePlayer() {
           <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 01-4 4H3" />
         </svg>
         {repeat === 'one' && <span className="absolute -top-1.5 -right-1.5 text-[9px] font-bold" style={{ color: accentHex }}>1</span>}
+        {repeat !== 'none' && (
+          /* The same dot the bottom bar puts under an engaged control. A
+             tint alone is easy to miss on an accent the person chose to be
+             quiet, and two places showing one state should show it the
+             same way. */
+          <span className="absolute left-1/2 -translate-x-1/2 rounded-full"
+            style={{ bottom: -4, width: 3, height: 3, background: accentHex }} />
+        )}
       </button>
     </div>
   )
@@ -148,7 +167,7 @@ export function HomePlayer() {
   const showLyrics = fsShowLyrics
   let content: React.ReactNode
   if (fsLayout === 'split') {
-    // Centered — title on top, lyrics+artwork in the middle, controls at the bottom.
+    // Centered - title on top, lyrics+artwork in the middle, controls at the bottom.
     // With text hidden, only the (larger) artwork sits centered in the middle.
     content = (
       <div className="h-full flex flex-col items-center px-12 py-8 overflow-hidden">
@@ -165,7 +184,7 @@ export function HomePlayer() {
       </div>
     )
   } else if (fsLayout === 'stack' && showLyrics) {
-    // Under text — title, lyrics, controls stacked; artwork on the side.
+    // Under text - title, lyrics, controls stacked; artwork on the side.
     content = (
       <div className="h-full flex items-center justify-center gap-16 px-12 overflow-hidden">
         <div className="flex-1 max-w-xl min-w-0 flex flex-col items-center text-center">
@@ -179,7 +198,7 @@ export function HomePlayer() {
       </div>
     )
   } else {
-    // Side — lyrics left, card on the right. With text hidden, an empty spacer
+    // Side - lyrics left, card on the right. With text hidden, an empty spacer
     // keeps its place so the card stays on the right (as if the text were there).
     content = (
       <div className="h-full flex items-center justify-center gap-16 px-12 overflow-hidden">

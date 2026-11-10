@@ -4,6 +4,7 @@ import { sc } from '../services/soundcloud'
 import type { SCTrack } from '../services/soundcloud'
 import { TrackActions } from './TrackActions'
 import { useT } from '../i18n'
+import { useEscape } from '../hooks/useEscape'
 
 function totalDuration(tracks: SCTrack[]): number {
   return tracks.reduce((s, t) => s + (t.duration || 0), 0)
@@ -30,11 +31,8 @@ export function AlbumPage({ z = 50 }: { z?: number }) {
   const [closing, setClosing] = useState(false)
   const close = () => { if (closing) return; setClosing(true); setTimeout(() => setSelectedAlbum(null), 300) }
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  // Only when this is the overlay on top - these stack.
+  useEscape(close)
 
   useEffect(() => {
     if (!selectedAlbum) return
@@ -59,7 +57,7 @@ export function AlbumPage({ z = 50 }: { z?: number }) {
   const playAll = () => { if (tracks.length) setTrack(tracks[0], tracks) }
   const addToQueue = () => {
     if (!tracks.length) return
-    usePlayer.setState({ queue: [...usePlayer.getState().queue, ...tracks] })
+    usePlayer.getState().queueLast(tracks)
     showToast(`${t('toastQueued')}: ${album.title}`, 'info')
   }
 
@@ -96,7 +94,7 @@ export function AlbumPage({ z = 50 }: { z?: number }) {
         <div className="flex-1 overflow-y-auto px-6 pb-28 pt-6">
           {/* Header */}
           <div className="flex gap-6 pb-6">
-            <div className="shrink-0 rounded-2xl overflow-hidden bg-white/5" style={{ width: 200, height: 200, boxShadow: '0 8px 40px rgba(0,0,0,0.6)' }}>
+            <div className="shrink-0 rounded-2xl overflow-hidden bg-white/5" style={{ width: 200, height: 200, boxShadow: 'var(--sh-2)' }}>
               {cover
                 ? <img src={cover} alt="" className="w-full h-full object-cover scale-in" />
                 : <div className="w-full h-full flex items-center justify-center"><svg className="w-12 h-12 text-white/20" fill="currentColor" viewBox="0 0 20 20"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/></svg></div>}
@@ -160,13 +158,12 @@ export function AlbumPage({ z = 50 }: { z?: number }) {
                       else setTrack(tr, tracks)
                     }}
                     onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track: tr }) }}
-                    className="group w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-all duration-150 cursor-pointer"
+                    data-active={active ? 'true' : 'false'}
+                    className="group row-hover w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-all duration-150 cursor-pointer"
                     style={{
-                      background: active ? 'rgba(var(--accent-rgb),0.12)' : 'transparent',
+                      background: active ? 'rgba(var(--accent-rgb),0.12)' : undefined,
                       border: active ? '1px solid rgba(var(--accent-rgb),0.2)' : '1px solid transparent',
                     }}
-                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)' }}
-                    onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                   >
                     <span className="w-6 text-center text-xs text-white/30 tabular-nums shrink-0">
                       {active

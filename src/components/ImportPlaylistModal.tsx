@@ -28,7 +28,7 @@ export function ImportPlaylistModal({ onClose, onImported }: Props) {
         const r = await sc.resolvePlaylist(v)
         title = r.title; tracks = r.tracks
       } else {
-        // Share code (MZP1) or our readable [sc:ID] tracklist — both resolve to IDs
+        // Share code (MZP1) or our readable [sc:ID] tracklist - both resolve to IDs
         const dec = decodePlaylistCode(v) ?? parsePlaylistText(v)
         if (!dec) throw new Error('bad-code')
         title = dec.name

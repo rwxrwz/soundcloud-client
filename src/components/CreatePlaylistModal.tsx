@@ -30,7 +30,7 @@ export function CreatePlaylistModal({ initialTrackIds = [], onClose, onCreated }
       try {
         const res = await sc.getPlaylists(user.id)
         setPlaylists(res.collection)
-      } catch { /* non-fatal — list refreshes on next sync */ }
+      } catch { /* non-fatal - list refreshes on next sync */ }
       showToast(t('playlistCreated'), 'success')
       onCreated?.(created)
       onClose()

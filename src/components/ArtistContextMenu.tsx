@@ -1,49 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
 import { useUI, useProfile, useToast } from '../store'
 import { sc } from '../services/soundcloud'
+import { useMenuAnchor } from './menuAnchor'
 import { useT } from '../i18n'
+import { IcoStroke } from './menuIcons'
 
 export function ArtistContextMenu() {
   const { artistMenu, setArtistMenu, setArtistPage } = useUI()
   const { followingIds, followOptimistic, unfollowOptimistic } = useProfile()
   const { show: showToast } = useToast()
   const t = useT()
-  const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ x: 0, y: 0 })
+  const { data, ref, style } = useMenuAnchor(artistMenu, () => setArtistMenu(null))
 
-  useEffect(() => {
-    if (!artistMenu) return
-    const el = ref.current
-    let x = artistMenu.x, y = artistMenu.y
-    if (el) {
-      const r = el.getBoundingClientRect()
-      if (x + r.width > window.innerWidth) x = window.innerWidth - r.width - 8
-      if (y + r.height > window.innerHeight) y = window.innerHeight - r.height - 8
-    }
-    setPos({ x, y })
-  }, [artistMenu])
-
-  useEffect(() => {
-    if (!artistMenu) return
-    const close = () => setArtistMenu(null)
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    const id = requestAnimationFrame(() => {
-      window.addEventListener('click', close)
-      window.addEventListener('contextmenu', close)
-      window.addEventListener('resize', close)
-      window.addEventListener('keydown', onKey)
-    })
-    return () => {
-      cancelAnimationFrame(id)
-      window.removeEventListener('click', close)
-      window.removeEventListener('contextmenu', close)
-      window.removeEventListener('resize', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [artistMenu, setArtistMenu])
-
-  if (!artistMenu) return null
-  const user = artistMenu.user
+  if (!data) return null
+  const user = data.user
   const avatar = sc.formatArtwork(user.avatar_url, 't200x200')
   const isFollowing = followingIds.includes(user.id)
 
@@ -81,15 +50,8 @@ export function ArtistContextMenu() {
   return (
     <div
       ref={ref}
-      className="fixed z-[200] px-1.5 py-1.5 rounded-xl"
-      style={{
-        top: pos.y, left: pos.x, minWidth: 230,
-        background: 'rgba(20,20,26,0.97)',
-        border: '1px solid rgba(255,255,255,0.1)',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(20px)',
-        animation: 'scale-in 0.12s ease',
-      }}
+      className="glass-panel fixed z-[200] px-1.5 py-1.5 rounded-xl"
+      style={{ ...style, minWidth: 230 }}
       onClick={e => e.stopPropagation()}
     >
       <div className="px-3 pt-2.5 pb-2.5 mb-1 flex gap-2.5 border-b border-white/[0.04] items-center">
@@ -120,6 +82,3 @@ export function ArtistContextMenu() {
   )
 }
 
-function IcoStroke({ children }: { children: React.ReactNode }) {
-  return <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
-}

@@ -4,7 +4,7 @@ import type { ResolvedStream } from './soundcloud'
 // Thin wrapper that points an <audio> element at a resolved stream.
 //
 // Chromium (and therefore Electron) has no native HLS support, so an m3u8 cannot
-// simply go into `el.src` — hls.js downloads the playlist and its segments and
+// simply go into `el.src` - hls.js downloads the playlist and its segments and
 // feeds them to the element through MediaSource. The element object itself never
 // changes, which is the whole point: its MediaElementAudioSourceNode (EQ chain,
 // visualizer analyser, bridge analyser) stays valid and the audio graph in
@@ -27,9 +27,6 @@ interface Slot {
 
 const slots = new Map<number, Slot>()
 
-export function hlsSupported(): boolean {
-  return Hls.isSupported()
-}
 
 // Attach a stream and resolve once it is ready to play. For progressive that is
 // immediately after load(); for HLS it is MANIFEST_PARSED, i.e. once duration is

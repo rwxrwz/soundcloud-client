@@ -8,13 +8,19 @@ interface Props {
   onCommit?: (v: number) => void
   color?: string
   className?: string
+  /* Told when the slider is hovered or dragged. The volume readout in the
+     bottom bar appears only then, and asking the slider is the only way to
+     get it right: a drag that wanders off the track is still a drag, which
+     a wrapper's own mouseleave would call over. */
+  onActiveChange?: (active: boolean) => void
 }
 
-export function Slider({ value, min = 0, max = 1, onChange, onCommit, color = '#ff5500', className = '' }: Props) {
+export function Slider({ value, min = 0, max = 1, onChange, onCommit, color = '#ff5500', className = '', onActiveChange }: Props) {
   const trackRef = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState(false)
   const [hovering, setHovering] = useState(false)
   const active = dragging || hovering
+  useEffect(() => { onActiveChange?.(active) }, [active])
 
   const pct = max > min ? Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100)) : 0
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSettings, ACCENT_COLORS } from '../store'
+import { useSettings, resolveAccentHex } from '../store'
 import { useT } from '../i18n'
 
 interface MiniState {
@@ -23,11 +23,9 @@ const DEFAULT: MiniState = {
 
 export function MiniPlayer() {
   const [ps, setPs] = useState<MiniState>(DEFAULT)
-  const { accent } = useSettings()
+  const { accent, customAccent } = useSettings()
   const t = useT()
-  const accentHex = accent === 'artwork' && ps.artRgb
-    ? `#${ps.artRgb.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('')}`
-    : (ACCENT_COLORS[accent as keyof typeof ACCENT_COLORS] ?? ACCENT_COLORS.orange)
+  const accentHex = resolveAccentHex(accent, customAccent, ps.artRgb ?? [])
 
   // Transparent body so backdrop-filter sees the desktop behind
   // mini-mode enables drag on the whole window (CSS class)
@@ -108,36 +106,36 @@ export function MiniPlayer() {
         userSelect: 'none',
       }}
     >
-      {/* Artwork colour ambient glow — bleeds in from the left */}
+      {/* Artwork colour ambient glow - bleeds in from the left */}
       <div style={{
         position: 'absolute', inset: 0, borderRadius: 16, pointerEvents: 'none',
         background: `radial-gradient(ellipse at 12% 55%, rgba(${r},${g},${b},0.38) 0%, rgba(${r},${g},${b},0.12) 40%, transparent 70%)`,
         transition: 'background 1.2s ease',
       }} />
 
-      {/* Top specular highlight — the "liquid" edge */}
+      {/* Top specular highlight - the "liquid" edge */}
       <div style={{
         position: 'absolute', top: 0, left: 12, right: 12, height: 1, pointerEvents: 'none',
         background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.22) 30%, rgba(255,255,255,0.22) 70%, transparent)',
         borderRadius: '0 0 4px 4px',
       }} />
 
-      {/* Main content row — entire window is drag zone (see .mini-mode CSS) */}
+      {/* Main content row - entire window is drag zone (see .mini-mode CSS) */}
       <div style={{
         flex: 1, display: 'flex', alignItems: 'center',
         gap: 11, padding: '6px 12px 9px 10px',
         position: 'relative', zIndex: 1, minWidth: 0,
       }}>
-        {/* Close button — top-right corner, floats over content */}
+        {/* Close button - top-right corner, floats over content */}
         <div style={{ position: 'absolute', top: 5, right: 7, zIndex: 2 }}>
           <CloseBtn />
         </div>
-        {/* Album art — glass card */}
+        {/* Album art - glass card */}
         <div style={{
           width: 78, height: 78, borderRadius: 10, flexShrink: 0,
           background: 'rgba(255,255,255,0.06)',
           border: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: `0 4px 20px rgba(${r},${g},${b},0.4), 0 2px 8px rgba(0,0,0,0.5)`,
+          boxShadow: `0 4px 20px rgba(${r},${g},${b},0.4), 0 6px 18px -10px rgba(0,0,0,0.5)`,
           overflow: 'hidden',
           transition: 'box-shadow 1.2s ease',
         }}>

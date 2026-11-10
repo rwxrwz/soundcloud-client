@@ -2,15 +2,13 @@
 
 # 🎧 SoundCloud Desktop Player
 
-**Unofficial SoundCloud desktop client for Windows**
-
-A custom player with likes, playlists, follows, a releases feed, synced lyrics, an equalizer, a mini-player, themes and a fullscreen player mode.
+**Unofficial SoundCloud desktop client for Windows and Linux**
 
 ![Electron](https://img.shields.io/badge/Electron-32-47848F?logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
-![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)
-![Version](https://img.shields.io/badge/Version-1.2-ff5500)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078D6)
+![Version](https://img.shields.io/badge/Version-2.0.0-ff5500)
 
 **English** · [Русский](#-soundcloud-desktop-player-ru)
 
@@ -18,82 +16,86 @@ A custom player with likes, playlists, follows, a releases feed, synced lyrics, 
 
 ---
 
-## 📸 Screenshots
+## ✨ Features
 
-<table>
-<tr>
-<td width="50%"><b>Fullscreen player style</b><br><img src="docs/fullscreen_style.jpg" width="100%"></td>
-<td width="50%"><b>Fullscreen lyrics</b><br><img src="docs/fullscreen.png" width="100%"></td>
-</tr>
-<tr>
-<td width="50%"><b>Settings — themes & player style</b><br><img src="docs/settings.jpg" width="100%"></td>
-<td width="50%"><b>Settings — System</b><br><img src="docs/settings2.jpg" width="100%"></td>
-</tr>
-<tr>
-<td width="50%"><b>Track context menu</b><br><img src="docs/context_menu.jpg" width="100%"></td>
-<td width="50%"><b>Playlist context menu</b><br><img src="docs/context_menu2.jpg" width="100%"></td>
-</tr>
-<tr>
-<td width="50%"><b>Search</b><br><img src="docs/main_search.jpg" width="100%"></td>
-<td width="50%"><b>Mini-player</b><br><img src="docs/mini_player.png" width="100%"></td>
-</tr>
-</table>
+### 📝 Lyrics
+- **Synced** - lines highlight as the song plays
+- **Sources** - LRCLIB first, Genius if LRCLIB has nothing
+- **Local timing** - an AI model on your computer places the timecodes. Free, no key
+- **Or Gemini** - needs your own key
+- **Manual** - paste the lyrics, or a Genius link if the wrong song was matched
+- **Batch check** - shows which tracks in a list have lyrics
+
+### 🎨 Appearance
+- **Edit on the player itself** - click a part of the window, its settings open next to it, changes apply at once
+- **Themes** - Default, Rain, Sakura, Late Night. Change background, accent and effects in one click
+- **Transparent theme** - the window is see-through, the desktop shows behind it
+- **Fullscreen** - three layouts, background coloured from the artwork
+- **Wallpapers** - your own images or video, with blur
+- **Effects** - rain, sakura, night sky
+- **New Year** - snow, a tree, a garland. On from 1 December to 14 January
+- **Visualizer**
+
+### 📚 Library
+- **Search** - tracks, artists, albums, playlists
+- **Artist and album pages** - with marks on what you already liked
+- **Friends** - who you follow and what they like
+- **Playlists** - yours, others', local. Export and import by code
+- **Suggestions** - what to add to a playlist you already have
+- **Releases** - new tracks from artists you follow
+- **Stats** - hours, day streaks, best day, top artists
+
+### 🔊 Sound
+- **Equalizer** - 5 bands, presets, shared by code
+- **Crossfade** - 0 to 12 seconds
+- **Output device** - chosen in the player
+- **Download** - the original, or MP3 320
+- **DRM** - unavailable tracks are skipped automatically
+
+### 📱 Outside the player
+- **Telegram** - your own bot with a Mini App inside it: control the player from your phone. Artwork, lyrics, queue, playlists, SoundCloud search
+- **Mini-player** - a separate window on top of the others
+- **Media keys** - MPRIS on Linux
+- **Discord** - status on your profile: track, artist, artwork, progress bar
+
+### ⚙️ Settings
+- **Presets** - save all settings as a code, switch between them
+- **Search** - across all three languages, handles a wrong keyboard layout and Russian declension
+- **Languages** - English, Russian, Ukrainian
+- **Behaviour** - tray, autostart, keep playing similar
+- **Updates** - check and read the changelog without leaving the player
 
 ---
 
-## 🆕 New in 1.3
-- **Tabbed search** — one box, results split into **All / Tracks / Artists / Albums / Playlists**, with a "show all" shortcut
-- **Album pages** — dedicated album view with cover, release date, genre, track count & length, and the full tracklist
-- **"You liked" on artist pages** — see which of an artist's tracks are in your likes/playlists, and which playlists each one sits in (Spotify-style)
-- **Like other people's playlists & albums** — heart them from search, the playlist/album header, or the right-click menu; they appear in your **Playlists** with a heart badge
-- **Context menu improvements** — dedicated menus for playlists, albums and artists: open, play, like/unlike, follow/unfollow, copy link, open in browser (foreign playlists show like instead of delete)
-- **Player bar** — like & add-to-playlist right from the bar
-- **Dynamic player bar** — narrows into a floating glass island when you open an artist / album / track page, then expands back
-- **Polish** — lyrics-scan button now uses the **L** mark, plus assorted fixes
-
-## 🆕 New in 1.2
-- **Home page** with an animated background and your playlists / releases
-- **Fullscreen player style** — turns Home into a full player (3 layouts, living artwork background, beat-reactive glow, artwork crossfade, adjustable lyrics size, mini-queue flyout)
-- **Crossfade between tracks** (configurable 0–12s)
-- **Playlist management** — rename, import/export by text or code/URL, local playlists, right-click menu, in-playlist filters
-- **Artist page** — releases & albums tabs, album accordion, banner, Verified/PRO badges, external links
-- **Themes** (Default / Glass / Minimal) and **video wallpapers** (.mp4 / .webm)
-- **System settings tab** — start page, minimize-to-tray, media keys, launch at startup, auto-skip DRM, settings backup (export/import/reset)
-- **OAuth token moved to the OS keychain** + hardened Electron setup
-
-## ✨ Unique features
-- Sort tracks in a playlist and likes: newest first or oldest first
-- "Releases" tab — latest releases from the artists you follow
-- Synced lyrics with line-by-line time highlighting (LRCLIB)
-- 5-band equalizer
-- Mini-player in the system tray
-- Fullscreen mode with track lyrics and an artwork-based background
-- Customizable accent colors and background styles
-
 ## 🛠️ Stack
-`Electron 32` · `electron-vite` · `React 18` · `TypeScript` · `Zustand` · `Tailwind CSS` · `Web Audio API` · unofficial SoundCloud API v2 · LRCLIB (lyrics).
 
-## 🔒 Security
-The app keeps all account and user data locally and talks to SoundCloud directly.
+`Electron 32` · `electron-vite` · `React 18` · `TypeScript 5` · `Zustand 5` · `Tailwind CSS 3` · `Web Audio API` · `onnxruntime-node` · `hls.js` · `lamejs` · `ws` · `mpris-service`
 
-- After sign-in, the OAuth token is stored in the **OS keychain** (Windows DPAPI via Electron `safeStorage`), not in plain storage, and is used only for requests to SoundCloud.
-- All requests go straight to SoundCloud, like from a normal browser. The app logs nothing and sends nothing to third parties.
-- Hardened Electron setup: context isolation on the hidden write window, navigation / external-link restrictions, and validation of imported settings files.
-- On sign-out, the token and account data are removed from local storage.
+Services the player uses on its own: unofficial SoundCloud API v2, LRCLIB, Genius, GitHub (update checks). Only after you enable them: Gemini (your key), Telegram Bot API (your bot), Cloudflare tunnels via `cloudflared` (downloaded on first use), Hugging Face (the timing model).
 
-## 🏗️ How it works
-- **Bypassing DataDome anti-bot protection.** Write requests (likes, playlists, follows) aren't sent directly — they're proxied into a hidden window with a live `soundcloud.com` session via `executeJavaScript`, so to the server it looks like a real user acting in a browser.
-- **Two-channel audio engine.** Two audio elements share one Web Audio graph (EQ → gain → analyser); the incoming track is mixed in for gapless crossfade. With crossfade off, playback runs as a single stream.
-- **DRM handling.** Distinguishes plain (`progressive`) and encrypted (Widevine HLS) transcodings — unavailable tracks are detected upfront and marked, with no crashes, and can be auto-skipped.
-- **Smart lyrics matching.** Parses "Artist — Title" from the name plus duration and artist checks, so it won't pull the wrong lyrics for a same-named song.
-- **State** — Zustand with persistence in `localStorage` (settings, session, cache); the OAuth token lives in the OS keychain.
-- **Mini-player** — a separate window synced over IPC.
+---
+
+## 🔒 Security and privacy
+
+- Secrets are kept in the OS keychain (Electron `safeStorage`): the SoundCloud, Gemini, Genius and Telegram bot tokens. Written from the main process, never read back.
+- Settings, caches and presets are in the OS user-data folder, not next to the binary. Sharing the build does not share your setup.
+- Nothing is sent anywhere except the services you turn on. No telemetry, no analytics.
+- One shared read-only Genius token ships with the app. It belongs to the app, is the same for everyone, and is there on purpose. A field for your own token appears in settings only if the shared one stops working.
+- The remote tunnel runs only while you have it on. The address changes on every launch, the page behind it holds none of your data, and only accounts on your whitelist can control the player.
+- The trade-off: traffic to the Mini App goes through Cloudflare servers, where TLS is terminated. The project runs no relay of its own, so this is the one external party involved.
+- Hardened Electron: context isolation, no node in web contents, navigation limits, IPC sender and imported file validation.
+
+---
 
 ## ℹ️ About unavailable tracks (DRM)
-Some SoundCloud tracks are served only as DRM-encrypted streams (Widevine) and can't be played in a plain `<audio>` element. Such tracks are marked and won't play (and can be auto-skipped). This is a SoundCloud limitation, not the app's.
+
+Some SoundCloud tracks are served only as DRM-encrypted streams (Widevine) and will not play in a plain `<audio>` element. The player detects them in advance, marks them in the list and can skip them automatically. This is a SoundCloud limitation.
+
+---
 
 ## ⚠️ Disclaimer
-Unofficial app, not affiliated with or endorsed by SoundCloud. It works through SoundCloud's private API, so use it at your own risk. Made for educational purposes, non-commercial.
+
+Unofficial app, not affiliated with or endorsed by SoundCloud. Works through SoundCloud's private API, so use it at your own risk. Educational, non-commercial.
 
 ---
 ---
@@ -102,9 +104,7 @@ Unofficial app, not affiliated with or endorsed by SoundCloud. It works through 
 
 # 🎧 SoundCloud Desktop Player (RU)
 
-**Неофициальный десктоп-клиент SoundCloud для Windows**
-
-Полноценный плеер: лайки, плейлисты, подписки, лента релизов, синхронизированный текст, эквалайзер, мини-плеер, темы и полноэкранный режим.
+**Неофициальный десктоп-клиент SoundCloud для Windows и Linux**
 
 [English](#-soundcloud-desktop-player) · **Русский**
 
@@ -112,79 +112,83 @@ Unofficial app, not affiliated with or endorsed by SoundCloud. It works through 
 
 ---
 
-## 📸 Скриншоты
+## ✨ Возможности
 
-<table>
-<tr>
-<td width="50%"><b>Полноэкранный стиль плеера</b><br><img src="docs/fullscreen_style.jpg" width="100%"></td>
-<td width="50%"><b>Полноэкранный текст</b><br><img src="docs/fullscreen.png" width="100%"></td>
-</tr>
-<tr>
-<td width="50%"><b>Настройки — темы и стиль плеера</b><br><img src="docs/settings.jpg" width="100%"></td>
-<td width="50%"><b>Настройки — System</b><br><img src="docs/settings2.jpg" width="100%"></td>
-</tr>
-<tr>
-<td width="50%"><b>Контекстное меню трека</b><br><img src="docs/context_menu.jpg" width="100%"></td>
-<td width="50%"><b>Контекстное меню плейлиста</b><br><img src="docs/context_menu2.jpg" width="100%"></td>
-</tr>
-<tr>
-<td width="50%"><b>Поиск</b><br><img src="docs/main_search.jpg" width="100%"></td>
-<td width="50%"><b>Мини-плеер</b><br><img src="docs/mini_player.png" width="100%"></td>
-</tr>
-</table>
+### 📝 Тексты песен
+- **Синхронный текст** - строки подсвечиваются по ходу песни
+- **Источники** - сначала LRCLIB, если там нет - Genius
+- **Таймкоды локально** - их расставляет AI-модель на твоём компьютере. Бесплатно, без ключа
+- **Или через Gemini** - нужен свой ключ
+- **Вручную** - можно вставить текст или ссылку на Genius, если нашлась не та песня
+- **Проверка списком** - показывает, у каких треков есть текст
+
+### 🎨 Внешний вид
+- **Настройка на самом плеере** - кликаешь по части окна, рядом открываются её настройки, изменения применяются сразу
+- **Темы** - Default, Rain, Sakura, Late Night. Меняют фон, акцент и эффекты одним кликом
+- **Прозрачная тема** - окно полупрозрачное, за ним виден рабочий стол
+- **Полный экран** - три раскладки, фон в цветах обложки
+- **Обои** - свои картинки или видео, с размытием
+- **Эффекты** - дождь, сакура, ночное небо
+- **Новый год** - снег, ёлка, гирлянда. С 1 декабря по 14 января
+- **Визуализатор**
+
+### 📚 Библиотека
+- **Поиск** - треки, артисты, альбомы, плейлисты
+- **Страницы артистов и альбомов** - с отметками, что уже в лайках
+- **Друзья** - подписки и их лайки
+- **Плейлисты** - свои, чужие, локальные. Экспорт и импорт кодом
+- **Подбор треков** - что добавить в уже собранный плейлист
+- **Релизы** - новое у тех, на кого подписан
+- **Статистика** - часы, дни подряд, лучший день, топ артистов
+
+### 🔊 Звук
+- **Эквалайзер** - 5 полос, пресеты, обмен кодом
+- **Кроссфейд** - от 0 до 12 секунд
+- **Устройство вывода** - выбирается в плеере
+- **Скачивание** - оригинал или MP3 320
+- **DRM** - недоступные треки пропускаются автоматически
+
+### 📱 Вне плеера
+- **Telegram** - свой бот и мини-приложение в нём: управляешь плеером с телефона. Обложка, текст, очередь, плейлисты, поиск по SoundCloud
+- **Мини-плеер** - отдельное окно поверх остальных
+- **Медиа-клавиши** - на Linux через MPRIS
+- **Discord** - статус в профиле: трек, исполнитель, обложка, прогресс бар
+
+### ⚙️ Настройки
+- **Пресеты** - сохранить все настройки кодом и переключаться между ними
+- **Поиск** - сразу по трём языкам, понимает неверную раскладку и склонения
+- **Языки** - русский, английский, украинский
+- **Поведение** - трей, автозапуск, продолжение похожими
+- **Обновления** - проверка и список изменений прямо в плеере
 
 ---
 
-## 🆕 Новое в 1.3
-- **Поиск по вкладкам** — одно поле, результаты разбиты на **Всё / Треки / Артисты / Альбомы / Плейлисты**, плюс «показать все»
-- **Страницы альбомов** — отдельный экран альбома: обложка, дата релиза, жанр, число треков и длительность, полный трек-лист
-- **«Тебе понравилось» на странице артиста** — видно, какие треки этого артиста у тебя в лайках и плейлистах, и в каких именно плейлистах каждый лежит (как в Spotify)
-- **Лайк чужих плейлистов и альбомов** — из поиска, из шапки плейлиста/альбома или через правый клик; появляются в твоих **Плейлистах** с бейджем-сердечком
-- **Улучшения контекстных меню** — отдельные меню для плейлистов, альбомов и артистов: открыть, слушать, лайк/анлайк, подписаться/отписаться, копировать ссылку, открыть в браузере (у чужих плейлистов вместо удаления — лайк)
-- **Нижний бар** — лайк и добавление в плейлист прямо из плеера
-- **Динамический бар плеера** — сжимается в парящий стеклянный остров, когда открываешь страницу артиста / альбома / трека, и раздвигается обратно
-- **Мелочи** — кнопка скана текстов теперь помечена буквой **L**, плюс разные фиксы
-
-## 🆕 Новое в 1.2
-- **Главная страница** с анимацией и твоими плейлистами / релизами
-- **Полноэкранный стиль плеера** — превращает главную в плеер (3 раскладки, живой фон из обложки, свечение под бит, кроссфейд обложки, размер текста, флайаут очереди)
-- **Кроссфейд между треками** (настраиваемый 0–12 с)
-- **Управление плейлистами** — переименование, импорт/экспорт по тексту или коду/ссылке, локальные плейлисты, контекстное меню, фильтры в плейлисте
-- **Страница артиста** — вкладки релизы и альбомы, аккордеон альбома, баннер, бейджи Verified/PRO, внешние ссылки
-- **Темы** (Default / Glass / Minimal) и **видео-обои** (.mp4 / .webm)
-- **Вкладка настроек «System»** — стартовая страница, сворачивание в трей, медиа-клавиши, автозапуск, авто-пропуск DRM, бэкап настроек (экспорт/импорт/сброс)
-- **OAuth-токен перенесён в keychain ОС** + усиленная безопасность Electron
-
-## ✨ Уникальные фишки
-- Сортировка треков в плейлисте и лайках: сначала новые или сначала старые
-- Вкладка «Релизы» — последние релизы артистов, на которых подписан
-- Синхронизированный текст песни с подсветкой строк по времени (LRCLIB)
-- 5-полосный эквалайзер
-- Мини-плеер в трее
-- Полноэкранный режим с текстом трека и фоном из обложки
-- Настраиваемые акцентные цвета и стили фона
-
 ## 🛠️ Стек
-`Electron 32` · `electron-vite` · `React 18` · `TypeScript` · `Zustand` · `Tailwind CSS` · `Web Audio API` · неофициальный SoundCloud API v2 · LRCLIB (тексты).
 
-## 🔒 Безопасность
-Приложение хранит все данные об аккаунте и пользователе локально и работает с сервисами SoundCloud напрямую.
+`Electron 32` · `electron-vite` · `React 18` · `TypeScript 5` · `Zustand 5` · `Tailwind CSS 3` · `Web Audio API` · `onnxruntime-node` · `hls.js` · `lamejs` · `ws` · `mpris-service`
 
-- OAuth-токен после входа хранится в **keychain ОС** (Windows DPAPI через Electron `safeStorage`), а не в открытом виде, и используется только для запросов к SoundCloud.
-- Все запросы идут напрямую к SoundCloud, как из обычного браузера. Приложение ничего не логирует и не отправляет на сторону.
-- Усиленная конфигурация Electron: изоляция контекста у скрытого write-окна, ограничения навигации и внешних ссылок, валидация импортируемых файлов настроек.
-- При выходе из аккаунта токен и данные аккаунта удаляются из локального хранилища.
+Сервисы, которые плеер использует сам: неофициальный SoundCloud API v2, LRCLIB, Genius, GitHub (проверка обновлений). Только после включения: Gemini (твой ключ), Telegram Bot API (твой бот), туннели Cloudflare через `cloudflared` (скачивается при первом включении), Hugging Face (модель для таймкодов).
 
-## 🏗️ Как устроено
-- **Обход антибот-защиты DataDome.** Write-запросы (лайки, плейлисты, подписки) выполняются не напрямую, а проксируются в скрытое окно с живой сессией `soundcloud.com` через `executeJavaScript` — для сервера это выглядит как действие настоящего пользователя в браузере.
-- **Двухканальный аудио-движок.** Два аудио-элемента используют один граф Web Audio (EQ → gain → analyser); входящий трек подмешивается для бесшовного кроссфейда. С выключенным кроссфейдом воспроизведение идёт одним потоком.
-- **Обработка DRM.** Различает обычные (`progressive`) и зашифрованные (Widevine HLS) транскодинги — недоступные треки определяются заранее и помечаются, без падений, и могут авто-пропускаться.
-- **Умный матчинг текстов.** Парсинг «Артист — Трек» из названия + проверка по длительности и артисту, чтобы не подтянуть чужой текст у одноимённой песни.
-- **Состояние** — Zustand с персистом в `localStorage` (настройки, сессия, кэш); OAuth-токен живёт в keychain ОС.
-- **Мини-плеер** — отдельное окно, синхронизация по IPC.
+---
+
+## 🔒 Безопасность и приватность
+
+- Секреты хранятся в системной связке ключей (Electron `safeStorage`): токены SoundCloud, Gemini, Genius и Telegram-бота. Записываются из главного процесса, обратно не читаются.
+- Настройки, кэш и пресеты лежат в пользовательской папке ОС, а не рядом с бинарником. Передав сборку, ты не передаёшь свои настройки.
+- Никуда ничего не отправляется, кроме включённых тобой сервисов. Ни телеметрии, ни аналитики.
+- В сборку входит общий read-only токен Genius. Он принадлежит приложению, одинаков у всех и добавлен намеренно. Поле для своего токена появляется в настройках, только если общий перестал работать.
+- Туннель для удалённого доступа работает только пока включён. Адрес меняется при каждом запуске, на странице по нему нет твоих данных, а управлять плеером могут только аккаунты из белого списка.
+- Компромисс: трафик до мини-приложения идёт через серверы Cloudflare, где расшифровывается TLS. Своего сервера-посредника у проекта нет, поэтому это единственная внешняя сторона.
+- Усиленная конфигурация Electron: изоляция контекста, node отключён в веб-контентах, ограничена навигация, проверяются отправители IPC и импортируемые файлы.
+
+---
 
 ## ℹ️ Про недоступные треки (DRM)
-Часть треков SoundCloud отдаёт только в DRM-зашифрованном виде (Widevine) — их нельзя воспроизвести в обычном `<audio>`. Такие треки помечаются и не проигрываются (можно авто-пропускать). Это ограничение SoundCloud, а не приложения.
+
+Часть треков SoundCloud отдаёт только в зашифрованном виде (DRM, Widevine), в обычном `<audio>` они не воспроизводятся. Плеер определяет их заранее, помечает в списке и может пропускать автоматически. Это ограничение SoundCloud.
+
+---
 
 ## ⚠️ Дисклеймер
-Неофициальное приложение, не связано с SoundCloud и не одобрено им. Работает через закрытый API SoundCloud, поэтому используйте на свой страх и риск. Создано в учебных целях, без коммерческого использования.
+
+Неофициальное приложение, не связано с SoundCloud и не одобрено им. Работает через закрытый API SoundCloud, используйте на свой страх и риск. В учебных целях, без коммерческого использования.

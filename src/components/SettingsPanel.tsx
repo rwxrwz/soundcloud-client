@@ -1,35 +1,113 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useSettings, useProfile, useUI, useUpdate, useToast, settingsSnapshot, ACCENT_COLORS, EQ_BANDS, PerfKey, AccentColor, BgStyle, VisualizerStyle, HeroAnim, Theme, PlayerStyle, FsLayout, Lang, StartPage } from '../store'
+import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
+import { RemoteSection } from './RemoteSection'
+import { useSettings, useProfile, useUI, useUpdate, useToast, useStats, useLyrics, settingsSnapshot, EQ_BANDS, Lang, StartPage } from '../store'
+import { bestDay, daysListened, humanTime, lastDays, perActiveDay, streak, topArtists } from '../services/stats'
+import { ReleaseNotes } from './ReleaseNotes'
+import { Toggle, FsToggleRow, Flag, FLAG_RU, FLAG_US, FLAG_UA, Collapsible, PreviewText } from './settingsControls'
+import { DateSetting } from './DateSetting'
+import { ThemesSection } from './ThemesSection'
 import { checkForUpdates, latestStable, cmpVersion } from '../services/updates'
 import { encodeEqPreset, decodeEqPreset } from '../services/eqPresets'
 import { encodeSettingsPreset, decodeSettingsPreset } from '../services/settingsPresetCode'
-import { NAV } from './Sidebar'
 import { useT } from '../i18n'
+import { LyricsTimingSection } from './LyricsTimingSection'
+import { useEscape } from '../hooks/useEscape'
+import { IconUser, IconPalette, IconLyrics, IconSound, IconSystem, IconRemote, IconVersions, IconInfo } from './settingsIcons'
+import { SearchField, SearchResults } from './SettingsSearch'
+import { searchSettings, type Place } from '../services/settingsSearch'
 
 interface Props { onClose: () => void }
 
 const EQ_LABELS = ['60', '250', '1k', '4k', '12k']
-type Category = 'profile' | 'appearance' | 'sound' | 'system' | 'versions' | 'info'
+type Category = 'profile' | 'appearance' | 'sound' | 'lyrics' | 'system' | 'remote' | 'versions' | 'info'
 
 export function SettingsPanel({ onClose }: Props) {
   const t = useT()
   const settingsTab = useUI(s => s.settingsTab)
   const [cat, setCat] = useState<Category>((settingsTab as Category) || 'profile')
   const [closing, setClosing] = useState(false)
+  const setEditMode = useUI(s => s.setEditMode)
+  const setShowSettings = useUI(s => s.setShowSettings)
+
   const requestClose = () => { if (closing) return; setClosing(true); setTimeout(onClose, 210) }
 
-  // Close on Escape
+  /* ── search ──────────────────────────────────────────────────────────── */
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const hits = useMemo(() => searchSettings(query), [query])
+  useEffect(() => { setActive(0) }, [query])
+  const searching = query.trim().length >= 2
+
+  /* Which tabs the current results are in. The nav dims to say "not where
+     you are looking" - and a tab that holds one of the answers is exactly
+     where you are looking, so dimming it says the opposite of the truth.
+     Everything in the editing mode is reached through Appearance, so that
+     is the tab those results belong to. */
+  const liveTabs = useMemo(() => new Set<Category>(
+    hits.map(h => (h.entry.place.kind === 'edit' ? 'appearance' : h.entry.place.tab) as Category)), [hits])
+
+  /* The row a result pointed at, held just long enough to be found after the
+     new tab has mounted and then cleared, so it flashes once per visit
+     rather than every time the tab is reopened. */
+  const [flash, setFlash] = useState<string | null>(null)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+    if (!flash) return
+    const el = document.querySelector(`[data-setting="${flash}"]`) as HTMLElement | null
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      el.classList.remove('set-flash')
+      /* Reading offsetWidth between the two restarts the animation; without
+         it, landing twice on the same row plays it only the first time. */
+      void el.offsetWidth
+      el.classList.add('set-flash')
+    }
+    const id = setTimeout(() => setFlash(null), 1400)
+    return () => clearTimeout(id)
+  }, [flash, cat])
+
+  const pick = (place: Place) => {
+    setQuery('')
+    if (place.kind === 'tab') { setCat(place.tab as Category); if (place.anchor) setFlash(place.anchor); return }
+    /* Everything this one names lives on the running player, so the panel
+       has to get out of the way first. It comes back when the mode closes,
+       the same way the door in the Appearance tab works. */
+    setShowSettings(false)
+    setEditMode(true, true, place)
+  }
+
+  const onSearchKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); if (query) setQuery(''); else requestClose(); return }
+    if (!searching || !hits.length) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => (i + 1) % hits.length) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => (i - 1 + hits.length) % hits.length) }
+    else if (e.key === 'Enter') { e.preventDefault(); const h = hits[active]; if (h) pick(h.entry.place) }
+  }
+
+  // Sliding pill behind the active tab - the same device the sidebar uses, so
+  // the selection travels instead of blinking from one row to another.
+  const navRef = useRef<HTMLDivElement>(null)
+  const pillRef = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const nav = navRef.current
+    const pill = pillRef.current
+    if (!nav || !pill) return
+    const btn = nav.querySelector('[data-active="true"]') as HTMLElement | null
+    if (!btn) return
+    pill.style.transform = `translateY(${btn.offsetTop}px)`
+    pill.style.height = `${btn.offsetHeight}px`
+  }, [cat])
+
+  // Only when this is the topmost overlay - it can sit over a track or
+  // artist page, and all of them used to close on one press.
+  useEscape(requestClose)
 
   const NAV: { id: Category; label: string; icon: JSX.Element }[] = [
     { id: 'profile',    label: t('catAccount'),    icon: <IconUser /> },
     { id: 'appearance', label: t('catAppearance'), icon: <IconPalette /> },
     { id: 'sound',      label: t('catSound'),      icon: <IconSound /> },
+    { id: 'lyrics',     label: t('catLyrics'),     icon: <IconLyrics /> },
     { id: 'system',     label: t('catSystem'),     icon: <IconSystem /> },
+    { id: 'remote',     label: t('catRemote'),     icon: <IconRemote /> },
     { id: 'versions',   label: t('catVersions'),   icon: <IconVersions /> },
     { id: 'info',       label: t('catInfo'),       icon: <IconInfo /> },
   ]
@@ -45,24 +123,44 @@ export function SettingsPanel({ onClose }: Props) {
       >
         {/* Internal sidebar */}
         <div className="w-48 shrink-0 flex flex-col border-r border-white/[0.045] p-3" style={{ background: 'rgba(255,255,255,0.02)' }}>
-          <p className="px-2 pt-1 pb-3 text-xs font-semibold text-white/40 uppercase tracking-wider">{t('settings')}</p>
-          <div className="space-y-0.5">
+          <p className="px-2 pt-1 pb-2.5 text-xs font-semibold text-white/40 uppercase tracking-wider">{t('settings')}</p>
+          <SearchField value={query} onChange={setQuery} onKey={onSearchKey} />
+          {/* Dimmed rather than hidden while a search is running: the tabs are
+              the map of this panel, and taking the map away mid-search leaves
+              nothing to fall back to. Clicking one still works and drops the
+              query, which is the obvious way out. */}
+          <div ref={navRef} className="space-y-0.5 relative">
+            <span
+              ref={pillRef}
+              className="absolute left-0 right-0 rounded-lg pointer-events-none"
+              style={{
+                top: 0,
+                height: 0,
+                background: 'rgba(var(--accent-rgb), 0.18)',
+                willChange: 'transform',
+                transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), height 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            />
             {NAV.map(item => {
               const active = cat === item.id
               return (
                 <button
                   key={item.id}
-                  onClick={() => setCat(item.id)}
-                  className="icon-btn w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all"
+                  data-active={active ? 'true' : 'false'}
+                  onClick={() => { setQuery(''); setCat(item.id) }}
+                  className="icon-btn row-hover relative w-full flex items-center h-9 gap-2.5 px-3 rounded-lg text-sm transition-all"
                   style={{
-                    background: active ? 'rgba(var(--accent-rgb),0.16)' : 'transparent',
+                    // The pill behind provides the active fill; the row only
+                    // carries the text colour. Hover tint comes from .row-hover.
+                    // The height is fixed so dropping the label cannot change
+                    // the row geometry the pill is measured against.
                     color: active ? '#fff' : 'rgba(255,255,255,0.5)',
+                    // Only the tabs with nothing in them step back.
+                    opacity: searching && !liveTabs.has(item.id) ? 0.3 : 1,
                   }}
-                  onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)' }}
-                  onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                 >
-                  <span style={{ color: active ? 'var(--accent)' : 'inherit' }}>{item.icon}</span>
-                  {item.label}
+                  <span className="shrink-0" style={{ color: active ? 'var(--accent)' : 'inherit' }}>{item.icon}</span>
+                  <span className="truncate">{item.label}</span>
                 </button>
               )
             })}
@@ -72,7 +170,9 @@ export function SettingsPanel({ onClose }: Props) {
         {/* Content */}
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.045] shrink-0">
-            <span className="font-semibold text-sm text-white">{NAV.find(n => n.id === cat)?.label}</span>
+            <span className="font-semibold text-sm text-white">
+              {searching ? `${t('findResults')} · ${hits.length}` : NAV.find(n => n.id === cat)?.label}
+            </span>
             <button onClick={requestClose} className="icon-btn p-1.5 rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-all">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
@@ -80,14 +180,25 @@ export function SettingsPanel({ onClose }: Props) {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-5 space-y-6">
-            {cat === 'profile' && <><ProfileTab onClose={onClose} /><LanguageTab /></>}
-            {cat === 'appearance' && <div className="space-y-2"><AppearanceTab /><PlayerTab /></div>}
+          {/* key on the container remounts it per tab, so the switch gets the same
+              page-enter animation the track list uses - and the scroll starts at
+              the top of the new tab instead of keeping the previous offset. */}
+          {searching ? (
+            <div className="flex-1 overflow-y-auto p-3">
+              <SearchResults hits={hits} query={query} active={active} setActive={setActive} onPick={pick} />
+            </div>
+          ) : (
+          <div key={cat} className="flex-1 overflow-y-auto p-5 space-y-6 page-enter">
+            {cat === 'profile' && <ProfileTab onClose={onClose} />}
+            {cat === 'appearance' && <AppearanceTab />}
             {cat === 'sound' && <SoundTab />}
+            {cat === 'lyrics' && <LyricsTab />}
             {cat === 'system' && <SystemTab />}
+            {cat === 'remote' && <RemoteSection />}
             {cat === 'versions' && <VersionsTab />}
             {cat === 'info' && <InfoTab />}
           </div>
+          )}
         </div>
       </div>
     </div>
@@ -142,7 +253,9 @@ function ProfileTab({ onClose }: { onClose: () => void }) {
         {t('openProfile')}
       </button>
 
-      <Section title={t('account')}>
+      <ListeningSection />
+
+      <Section title={t('account')} anchor="signout">
         <button
           onClick={() => { logout(); onClose() }}
           className="icon-btn w-full py-2 px-3 rounded-lg text-sm text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all text-left"
@@ -154,222 +267,41 @@ function ProfileTab({ onClose }: { onClose: () => void }) {
   )
 }
 
+/* Appearance is not a list of named settings any more. Every look-and-feel
+   choice lives in the editing mode, where it hangs off the part of the player
+   it changes, so this tab is the door to it and nothing else. Keeping a second
+   copy here is how accent ended up configurable in four places at once. */
 function AppearanceTab() {
-  const { accent, bgStyle, wallpaperPath, theme, transparencyLevel, setTransparencyLevel, setAccent, setBgStyle, setWallpaperPath, setTheme, hiddenNav, toggleNavHidden } = useSettings()
-  const { artRgb } = useUI()
   const t = useT()
-  const artworkHex = `#${artRgb.map(v => v.toString(16).padStart(2, '0')).join('')}`
-  const [launchedTransparent, setLaunchedTransparent] = useState(false)
-  useEffect(() => { window.electronAPI?.getWindowTransparent?.().then(setLaunchedTransparent).catch(() => {}) }, [])
-  const restartNeeded = theme === 'transparent' && !launchedTransparent
-
-  const themeLabel: Record<Theme, string> = { default: t('themeDefault'), glass: t('themeGlass'), minimal: t('themeMinimal'), transparent: t('themeTransparent') }
-  const bgLabel: Record<string, string> = { artwork: t('bgDynamic'), accent: t('bgAccent'), aurora: t('bgAurora'), midnight: t('bgMidnight'), dark: t('bgDark'), wallpaper: t('videoWallpapers') }
-  const accentDotHex = accent === 'artwork' ? artworkHex : (ACCENT_COLORS[accent] ?? artworkHex)
-  const wpActive = bgStyle === 'wallpaper' && !!wallpaperPath
-  const wpName = wpActive ? wallpaperPath.split(/[\\/]/).pop() : t('wallpaperNone')
-
+  const { setShowSettings, setEditMode } = useUI()
   return (
     <>
-      <Collapsible title={t('theme')} defaultOpen preview={<PreviewText>{themeLabel[theme]}</PreviewText>}>
-        <div className="grid grid-cols-2 gap-2.5">
-          {([
-            ['default', t('themeDefault'), t('themeDefaultSub')],
-            ['glass',   t('themeGlass'),   t('themeGlassSub')],
-            ['minimal', t('themeMinimal'), t('themeMinimalSub')],
-            ['transparent', t('themeTransparent'), t('themeTransparentSub')],
-          ] as [Theme, string, string][]).map(([val, label, sub]) => (
-            <ThemeCard key={val} theme={val} active={theme === val} label={label} sub={sub} onClick={() => setTheme(val)} />
-          ))}
-        </div>
-        {theme === 'transparent' && (
-          <div className="mt-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-white/80">{t('transparency')}</span>
-              <span className="text-[11px] text-white/40 tabular-nums">{transparencyLevel}%</span>
-            </div>
-            <input
-              type="range" min={5} max={95} step={1} value={transparencyLevel}
-              onChange={e => setTransparencyLevel(Number(e.target.value))}
-              className="w-full" style={{ accentColor: 'var(--accent)' }}
-            />
-          </div>
-        )}
-        {restartNeeded && (
-          <div className="mt-3 flex items-center justify-between gap-3 px-3 py-2 rounded-lg"
-            style={{ background: 'rgba(var(--accent-rgb),0.1)', border: '1px solid rgba(var(--accent-rgb),0.25)' }}>
-            <span className="text-xs text-white/70">{t('restartNeeded')}</span>
-            <button onClick={() => window.electronAPI?.restartApp?.()}
-              className="icon-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105 active:scale-95 shrink-0"
-              style={{ background: 'var(--accent)', color: '#fff' }}>{t('restartNow')}</button>
-          </div>
-        )}
-      </Collapsible>
-
-      <Collapsible title={t('accentColor')} preview={<span className="w-3.5 h-3.5 rounded-full inline-block shrink-0" style={{ background: accentDotHex, border: '1px solid rgba(255,255,255,0.2)' }} />}>
-        <div className="flex flex-wrap gap-2.5 px-2 py-2">
-          {(Object.entries(ACCENT_COLORS) as [AccentColor, string][]).map(([key, hex]) => (
-            <button
-              key={key}
-              onClick={() => setAccent(key)}
-              className="w-8 h-8 rounded-full transition-all duration-200 relative shrink-0"
-              style={{
-                background: hex,
-                transform: accent === key ? 'scale(1.18)' : 'scale(1)',
-                boxShadow: accent === key ? `0 0 8px 1px ${hex}66` : undefined,
-                border: key === 'white' ? '1px solid rgba(255,255,255,0.2)' : undefined,
-              }}
-              title={key}
-            >
-              {accent === key && (
-                <svg className="absolute inset-0 m-auto w-3.5 h-3.5" style={{ color: key === 'white' ? '#222' : '#fff' }} fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                </svg>
-              )}
-            </button>
-          ))}
-          <DynamicSwatch hex={artworkHex} active={accent === 'artwork'} onClick={() => setAccent('artwork')} title={t('vividArtwork')} />
-        </div>
-        {accent === 'artwork' && <p className="text-[10px] text-white/30 mt-2 leading-tight">{t('artworkChanges')}</p>}
-      </Collapsible>
-
-      {theme !== 'transparent' && (
-        <Collapsible title={t('background')} preview={<PreviewText>{bgLabel[bgStyle] ?? bgStyle}</PreviewText>}>
-          <div className="space-y-1.5">
-            {([
-              ['artwork', t('bgDynamic'),  t('bgDynamicSub')],
-              ['accent',  t('bgAccent'),   t('bgAccentSub')],
-              ['aurora',  t('bgAurora'),   t('bgAuroraSub')],
-              ['midnight',t('bgMidnight'), t('bgMidnightSub')],
-              ['dark',    t('bgDark'),     t('bgDarkSub')],
-            ] as [BgStyle, string, string][]).map(([val, label, sub]) => (
-              <RadioBtn key={val} active={bgStyle === val} onClick={() => setBgStyle(val)} label={label} sub={sub} />
-            ))}
-          </div>
-        </Collapsible>
-      )}
-
-      {theme !== 'transparent' && (
-        <Collapsible title={t('videoWallpapers')} preview={<PreviewText>{wpName}</PreviewText>}>
-          <WallpaperSection
-            active={bgStyle === 'wallpaper'}
-            wallpaperPath={wallpaperPath}
-            onPick={(p) => { setWallpaperPath(p); setBgStyle('wallpaper') }}
-            onNone={() => setBgStyle('artwork')}
-          />
-        </Collapsible>
-      )}
-
-      <Collapsible title={t('sidebarTabs')}>
-        <div className="flex flex-col gap-0.5">
-          {NAV.map(item => {
-            const visible = !hiddenNav.includes(item.id)
-            const lastOne = visible && hiddenNav.length >= NAV.length - 1
-            return (
-              <div key={item.id} className="flex items-center justify-between py-1.5">
-                <span className="text-sm text-white/75">{t(item.key)}</span>
-                <Toggle active={visible} disabled={lastOne} onClick={() => toggleNavHidden(item.id)} />
-              </div>
-            )
-          })}
-        </div>
-      </Collapsible>
-    </>
-  )
-}
-
-function PlayerTab() {
-  const { theme, bgStyle, visualizerStyle, heroAnim, playerStyle, fsLayout, fsShowLyrics, fsLiveBg, fsBeatGlow, fsArtCrossfade, lyricsFontScale, setVisualizerStyle, setHeroAnim, setPlayerStyle, setFsLayout, setFsShowLyrics, setFsLiveBg, setFsBeatGlow, setFsArtCrossfade, setLyricsFontScale, iconGlow, setIconGlow } = useSettings()
-  const toggleLyrics = () => { const v = !fsShowLyrics; setFsShowLyrics(v); if (!v && fsLayout === 'stack') setFsLayout('side') }
-  const t = useT()
-  const psLabel: Record<PlayerStyle, string> = { default: t('psDefault'), fullscreen: t('psFullscreen') }
-  const vizLabel: Record<VisualizerStyle, string> = { bars: t('vizBars'), wave: t('vizWave'), mirror: t('vizMirror') }
-  const animLabel: Record<HeroAnim, string> = { wave: t('animWave'), threads: t('animThreads'), silk: t('animSilk'), mist: t('animMist'), weave: t('animWeave'), spectrum: t('animSpectrum'), none: t('animNone') }
-  return (
-    <>
-      <Collapsible title={t('playerStyleLabel')} preview={<PreviewText>{psLabel[playerStyle]}</PreviewText>}>
-        <div className="space-y-1.5">
-          {([
-            ['default',    t('psDefault'),    t('psDefaultSub')],
-            ['fullscreen', t('psFullscreen'), t('psFullscreenSub')],
-          ] as [PlayerStyle, string, string][]).map(([val, label, sub]) => (
-            <RadioBtn key={val} active={playerStyle === val} onClick={() => setPlayerStyle(val)} label={label} sub={sub} />
-          ))}
-        </div>
-
-        {playerStyle === 'fullscreen' && (
-          <div className="mt-3 pt-3 border-t border-white/[0.045] space-y-1.5">
-            <div className="pb-1">
-              <FsToggleRow label={t('fsShowLyrics')} active={fsShowLyrics} onClick={toggleLyrics} />
-            </div>
-            <p className="text-[10px] text-white/30 mb-1.5 px-0.5">{t('fsLayoutLabel')}</p>
-            {([
-              ['side',  t('fsSide'),  t('fsSideSub')],
-              ['stack', t('fsStack'), t('fsStackSub')],
-              ['split', t('fsSplit'), t('fsSplitSub')],
-            ] as [FsLayout, string, string][]).map(([val, label, sub]) => (
-              <RadioBtn key={val} active={fsLayout === val} disabled={val === 'stack' && !fsShowLyrics}
-                onClick={() => setFsLayout(val)} label={label} sub={sub} />
-            ))}
-
-            <div className="pt-1 space-y-2.5">
-              {theme !== 'transparent' && <FsToggleRow label={t('fsLiveBg')} active={fsLiveBg && bgStyle !== 'wallpaper'} disabled={bgStyle === 'wallpaper'} onClick={() => setFsLiveBg(!fsLiveBg)} />}
-              <FsToggleRow label={t('fsBeatGlow')} active={fsBeatGlow} onClick={() => setFsBeatGlow(!fsBeatGlow)} />
-              <FsToggleRow label={t('fsCrossfade')} active={fsArtCrossfade} onClick={() => setFsArtCrossfade(!fsArtCrossfade)} />
-            </div>
-
-            <div className="pt-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-white/80">{t('lyricsFontSize')}</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-[11px] text-white/40 tabular-nums">{Math.round(lyricsFontScale * 100)}%</span>
-                  <button onClick={() => setLyricsFontScale(1)} className="text-[11px] text-white/40 hover:text-white/80 transition-colors">{t('eqReset')}</button>
-                </div>
-              </div>
-              <input
-                type="range" min={0.7} max={1.8} step={0.05} value={lyricsFontScale}
-                onChange={e => setLyricsFontScale(Number(e.target.value))}
-                className="w-full" style={{ accentColor: 'var(--accent)' }}
-              />
-            </div>
-          </div>
-        )}
-      </Collapsible>
-
-      <Collapsible title={t('visualizer')} preview={<PreviewText>{vizLabel[visualizerStyle]}</PreviewText>}>
-        <div className="space-y-1.5">
-          {([
-            ['bars',   t('vizBars'),   t('vizBarsSub')],
-            ['wave',   t('vizWave'),   t('vizWaveSub')],
-            ['mirror', t('vizMirror'), t('vizMirrorSub')],
-          ] as [VisualizerStyle, string, string][]).map(([val, label, sub]) => (
-            <RadioBtn key={val} active={visualizerStyle === val} onClick={() => setVisualizerStyle(val)} label={label} sub={sub} />
-          ))}
-        </div>
-      </Collapsible>
-
-      {/* Home animation only matters in the default player style, and not on transparent */}
-      {playerStyle !== 'fullscreen' && theme !== 'transparent' && (
-      <Collapsible title={t('heroAnimation')} preview={<PreviewText>{animLabel[heroAnim]}</PreviewText>}>
-        <div className="space-y-1.5">
-          {([
-            ['wave',     t('animWave'),     t('animWaveSub')],
-            ['threads',  t('animThreads'),  t('animThreadsSub')],
-            ['silk',     t('animSilk'),     t('animSilkSub')],
-            ['mist',     t('animMist'),     t('animMistSub')],
-            ['weave',    t('animWeave'),    t('animWeaveSub')],
-            ['spectrum', t('animSpectrum'), t('animSpectrumSub')],
-            ['none',     t('animNone'),     t('animNoneSub')],
-          ] as [HeroAnim, string, string][]).map(([val, label, sub]) => (
-            <RadioBtn key={val} active={heroAnim === val} onClick={() => setHeroAnim(val)} label={label} sub={sub} />
-          ))}
-        </div>
-      </Collapsible>
-      )}
-
-      <div className="px-1 pt-2">
-        <FsToggleRow label={t('iconGlow')} active={iconGlow} onClick={() => setIconGlow(!iconGlow)} />
-      </div>
+    <button
+      onClick={() => { setShowSettings(false); setEditMode(true, true) }}
+      className="icon-btn w-full px-4 py-4 rounded-xl text-left transition-all flex items-center gap-3.5"
+      style={{ background: 'rgba(var(--accent-rgb),0.14)', border: '1px solid rgba(var(--accent-rgb),0.35)' }}
+    >
+      <span className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center"
+        style={{ background: 'rgba(var(--accent-rgb),0.2)' }}>
+        <svg className="w-[18px] h-[18px]" style={{ color: 'var(--accent)' }} viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" />
+        </svg>
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-white">{t('vcLive')}</span>
+        <span className="block text-[11px] text-white/45 leading-snug mt-0.5">{t('vcLiveSub')}</span>
+      </span>
+    </button>
+    {/* The tab is one button now, so it has to say where its settings went. */}
+    <div className="mt-4 px-1">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35">{t('vcLiveWhat')}</p>
+      <p className="text-[12px] text-white/45 leading-relaxed mt-1.5">{t('vcLiveList')}</p>
+    </div>
+    {/* The other way round the same subject: not a setting at a time, but a
+        whole look at once. Under the door rather than above it - a theme is
+        a starting point, and the editing mode is where it gets finished. */}
+    <ThemesSection />
     </>
   )
 }
@@ -416,7 +348,7 @@ function SoundTab() {
 
   return (
     <>
-    <Section title={t('outputDevice')}>
+    <Section title={t('outputDevice')} anchor="device">
       <div className="icon-btn rounded-lg">
         <select
           value={outputDeviceId}
@@ -434,7 +366,7 @@ function SoundTab() {
       </div>
     </Section>
 
-    <Section title={t('crossfade')}>
+    <Section title={t('crossfade')} anchor="crossfade">
       <p className="text-[10px] text-white/30 mb-2.5 leading-tight">{t('crossfadeSub')}</p>
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm text-white/80">{t('crossfadeDuration')}</span>
@@ -449,7 +381,7 @@ function SoundTab() {
       />
     </Section>
 
-    <Section title={t('equalizer')}>
+    <Section title={t('equalizer')} anchor="eq">
       <div className="flex items-center justify-between mb-3">
         <Toggle active={eqEnabled} onClick={() => setEqEnabled(!eqEnabled)} />
         <button onClick={resetEq} className="text-[11px] text-white/40 hover:text-white/80 transition-colors">{t('eqReset')}</button>
@@ -550,15 +482,16 @@ function SoundTab() {
 }
 
 function SystemTab() {
-  const { startPage, setStartPage, closeToTray, setCloseToTray, mediaKeys, setMediaKeys, launchAtStartup, setLaunchAtStartup, autoSkipDrm, setAutoSkipDrm, datadomeBypass, setDatadomeBypass, resetSettings } = useSettings()
+  const { startPage, setStartPage, closeToTray, setCloseToTray, mediaKeys, setMediaKeys, launchAtStartup, setLaunchAtStartup, autoSkipDrm, setAutoSkipDrm, datadomeBypass, setDatadomeBypass, discordRpc, setDiscordRpc, autoRadio, setAutoRadio, resetSettings } = useSettings()
   const t = useT()
-  const [confirmReset, setConfirmReset] = useState(false)
+  const askConfirm = useUI(s => s.askConfirm)
 
   const toggleTray = (v: boolean) => { setCloseToTray(v); window.electronAPI?.setCloseToTray?.(v) }
   const toggleLaunch = (v: boolean) => { setLaunchAtStartup(v); window.electronAPI?.setLoginItem?.(v) }
   // Autostart is a Windows-only feature (portable-exe login item); disable elsewhere.
   const isWindows = navigator.userAgent.includes('Windows')
   const toggleDatadome = (v: boolean) => { setDatadomeBypass(v); window.electronAPI?.setDatadomeBypass?.(v) }
+  const toggleDiscord = (v: boolean) => { setDiscordRpc(v); window.electronAPI?.setDiscordRpc?.(v) }
 
   // Re-push system prefs to the main process after a bulk change (reset)
   const syncSystem = () => {
@@ -566,18 +499,17 @@ function SystemTab() {
     window.electronAPI?.setCloseToTray?.(s.closeToTray)
     window.electronAPI?.setLoginItem?.(s.launchAtStartup)
     window.electronAPI?.setDatadomeBypass?.(s.datadomeBypass)
+    window.electronAPI?.setDiscordRpc?.(s.discordRpc)
   }
 
-  const doReset = () => {
-    if (!confirmReset) { setConfirmReset(true); return }
+  const doReset = async () => {
+    if (!await askConfirm(t('resetAsk'), t('resetSettings'), true)) return
     resetSettings()
     syncSystem()
-    setConfirmReset(false)
   }
 
   const PAGES: [StartPage, string][] = [
     ['main', t('home')],
-    ['stream', t('stream')],
     ['releases', t('releases')],
     ['likes', t('likes')],
     ['playlists', t('playlists')],
@@ -591,7 +523,17 @@ function SystemTab() {
 
   return (
     <>
-      <Section title={t('startPage')}>
+      {/* First on the tab on purpose. Somebody looking for the language
+          picker is, by definition, possibly unable to read the labels
+          around it - so it goes where it can be found by shape rather than
+          by reading: the top. */}
+      <LanguageTab />
+
+      <Section title={t('dateTitle')} anchor="date">
+        <DateSetting />
+      </Section>
+
+      <Section title={t('startPage')} anchor="startpage">
         <div className="grid grid-cols-2 gap-2">
           {PAGES.map(([val, label]) => {
             const active = startPage === val
@@ -611,23 +553,24 @@ function SystemTab() {
       </Section>
 
       <Section title={t('behavior')}>
+        {/* One handle per switch rather than one for the group: the search
+            names each of these by itself, and landing on "Behavior" with
+            seven rows under it leaves the finding still to do. */}
         <div className="space-y-2.5">
-          <FsToggleRow label={t('closeToTray')} active={closeToTray} onClick={() => toggleTray(!closeToTray)} />
-          <FsToggleRow label={t('mediaKeys')} active={mediaKeys} onClick={() => setMediaKeys(!mediaKeys)} />
-          <div>
+          <div data-setting="tray"><FsToggleRow label={t('closeToTray')} active={closeToTray} onClick={() => toggleTray(!closeToTray)} /></div>
+          <div data-setting="mediakeys"><FsToggleRow label={t('mediaKeys')} active={mediaKeys} onClick={() => setMediaKeys(!mediaKeys)} /></div>
+          <div data-setting="radio"><FsToggleRow label={t('autoRadio')} note={t('autoRadioNote')} active={autoRadio} onClick={() => setAutoRadio(!autoRadio)} /></div>
+          <div data-setting="startup">
             <FsToggleRow label={t('launchAtStartup')} active={isWindows && launchAtStartup} disabled={!isWindows} onClick={() => toggleLaunch(!launchAtStartup)} />
             {!isWindows && <p className="text-[10px] text-white/30 mt-0.5">{t('launchAtStartupWin')}</p>}
           </div>
-          <FsToggleRow label={t('autoSkipDrm')} active={autoSkipDrm} onClick={() => setAutoSkipDrm(!autoSkipDrm)} />
-          <FsToggleRow label={t('datadomeBypass')} active={datadomeBypass} onClick={() => toggleDatadome(!datadomeBypass)} />
+          <div data-setting="drm"><FsToggleRow label={t('autoSkipDrm')} active={autoSkipDrm} onClick={() => setAutoSkipDrm(!autoSkipDrm)} /></div>
+          <div data-setting="datadome"><FsToggleRow label={t('datadomeBypass')} active={datadomeBypass} onClick={() => toggleDatadome(!datadomeBypass)} /></div>
+          <div data-setting="discord"><FsToggleRow label={t('discordRpc')} note={t('discordRpcNote')} active={discordRpc} onClick={() => toggleDiscord(!discordRpc)} /></div>
         </div>
       </Section>
 
-      <Collapsible title={t('catPerf')}>
-        <PerfSection />
-      </Collapsible>
-
-      <Collapsible title={t('shortcuts')}>
+      <div data-setting="shortcuts"><Collapsible title={t('shortcuts')}>
         <div className="space-y-1">
           {SHORTCUTS.map(([keys, desc]) => (
             <div key={keys} className="flex items-center justify-between gap-3 py-1">
@@ -639,28 +582,152 @@ function SystemTab() {
             </div>
           ))}
         </div>
-      </Collapsible>
+      </Collapsible></div>
 
       <SettingsPresetsSection />
 
-      <button onClick={doReset} onMouseLeave={() => setConfirmReset(false)}
+      <button onClick={doReset} data-setting="reset"
         className="w-full py-2 px-3 rounded-lg text-sm transition-all"
         style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
-        {confirmReset ? t('resetConfirm') : t('resetSettings')}
+        {t('resetSettings')}
       </button>
     </>
   )
 }
 
-function SystemToggle({ label, sub, active, onClick }: { label: string; sub: string; active: boolean; onClick: () => void }) {
+/* The key, the switch, and one sentence about where the audio goes.
+   The field is write-only by design: it is handed to the main process, which
+   puts it in the OS keychain, and nothing ever reads it back out to the
+   window - so there is no value to show here, only whether one is stored. */
+/* Everything about words under the music, in one place: where they come
+   from, who times them, and the two folders that remember the answers. */
+function LyricsTab() {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex flex-col min-w-0">
-        <span className="text-sm text-white/80">{label}</span>
-        <span className="text-[10px] text-white/40">{sub}</span>
+    <>
+      <div data-setting="timing"><LyricsTimingSection /></div>
+      <GeniusSection />
+      <LyricsCacheSection />
+    </>
+  )
+}
+
+function LyricsCacheSection() {
+  const t = useT()
+  const showToast = useToast(s => s.show)
+  const askConfirm = useUI(s => s.askConfirm)
+  const [stat, setStat] = useState<{ files: number; bytes: number } | null>(null)
+  const refresh = () => { window.electronAPI?.lyricsCacheStat?.().then(setStat).catch(() => {}) }
+  useEffect(refresh, [])
+
+  const size = stat
+    ? stat.bytes >= 1024 * 1024
+      ? `${(stat.bytes / 1024 / 1024).toFixed(1)} MB`
+      : `${Math.max(1, Math.round(stat.bytes / 1024))} KB`
+    : ''
+
+  return (
+    <Section title={t('lyCache')} anchor="lycache">
+      <p className="text-[11px] text-white/40 leading-relaxed mb-2.5">{t('lyCacheSub')}</p>
+      {stat && (
+        <p className="text-[11px] text-white/55 mb-2.5">
+          {stat.files ? `${stat.files} ${t('lyCacheFiles')} · ${size}` : t('lyCacheEmpty')}
+        </p>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => window.electronAPI?.lyricsCacheOpen?.()}
+          className="icon-btn px-3 py-2 rounded-lg text-[12px] text-white/80 transition-all"
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          {t('lyCacheOpen')}
+        </button>
+        {/* A dialog, not a second press on the same button. Arming a control
+            by clicking it means the click that does the damage lands on the
+            spot the cursor is already sitting on, and the only thing telling
+            you the button changed meaning is its own label. */}
+        <button
+          onClick={async () => {
+            if (!await askConfirm(t('lyCacheClearAsk'), t('lyCacheClear'), true)) return
+            const gone = await window.electronAPI?.lyricsCacheClear?.()
+            /* The "L" marks live in browser storage and are only ever a
+               reflection of these files. Leaving them behind is how a
+               cleared cache still showed a badge on every track. */
+            useLyrics.getState().clear()
+            refresh()
+            showToast(gone ? `${t('lyCacheCleared')} (${gone})` : t('lyCacheEmpty'), 'success')
+          }}
+          disabled={!stat?.files}
+          className="icon-btn px-3 py-2 rounded-lg text-[12px] transition-all disabled:opacity-40"
+          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
+          {t('lyCacheClear')}
+        </button>
       </div>
-      <Toggle active={active} onClick={onClick} />
-    </div>
+    </Section>
+  )
+}
+
+/* One question, asked once: what puts the words in time with the music.
+   Where the words come from is not a setting - they are always a human's,
+   from a catalogue or from Genius, and the player will not invent any. So
+   the only choice left is who does the timing, and it is a choice between
+   three states rather than two switches that could contradict each other. */
+
+/* The model, as a thing you own rather than a side effect of a radio
+   button. It has three states and they are one card, not three: the same
+   header stays put while the body below it changes, so installing does
+   not make the panel jump.
+
+   What it says about the model is what somebody deciding whether to spend
+   300MB would want to know - what it is, where it comes from, why it is
+   not already in the build, and roughly how fast it runs - and all of it
+   is read off the code that actually does the work, not written twice. */
+function GeniusSection() {
+  const t = useT()
+  const showToast = useToast(s => s.show)
+  const [gKey, setGKey] = useState('')
+  const [gStored, setGStored] = useState(false)
+  const [needed, setNeeded] = useState(false)
+  useEffect(() => {
+    window.electronAPI?.geniusHasToken?.().then(setGStored).catch(() => {})
+    window.electronAPI?.geniusReady?.().then(ok => setNeeded(!ok)).catch(() => {})
+  }, [])
+
+  const saveGenius = async () => {
+    const v = gKey.trim()
+    if (!v) return
+    await window.electronAPI?.geniusSetToken?.(v)
+    setGKey(''); setGStored(true)
+    showToast(t('aiKeySaved'), 'success')
+  }
+
+  if (!needed && !gStored) return null
+
+  return (
+    <Section title={t('gnTitle')} anchor="genius">
+      <p className="text-[11px] text-white/45 leading-relaxed mb-2.5">
+        {needed ? t('gnNeeded') : t('gnShort')}
+      </p>
+      <Collapsible title={t('gnUseOwn')} defaultOpen={needed}
+        preview={gStored ? <PreviewText>{t('gnSet')}</PreviewText> : undefined}>
+        <div className="flex items-center gap-2">
+          <input type="password" value={gKey} placeholder={t('gnPlaceholder')}
+            onChange={e => setGKey(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') saveGenius() }}
+            className="flex-1 min-w-0 rounded-lg px-3 py-2 text-sm text-white focus:outline-none transition-all"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }} />
+          <button onClick={saveGenius} disabled={!gKey.trim()}
+            className="icon-btn px-3 py-2 rounded-lg text-[12px] font-semibold text-white transition-all disabled:opacity-40"
+            style={{ background: 'var(--accent)' }}>{t('save')}</button>
+        </div>
+        <a href="https://genius.com/api-clients" target="_blank" rel="noreferrer"
+          className="inline-flex items-center gap-1.5 text-[11px] mt-2" style={{ color: 'var(--accent)' }}>
+          {t('gnGetToken')}
+          <svg className="w-3 h-3 shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><path d="M15 3h6v6M10 14L21 3" />
+          </svg>
+        </a>
+        <p className="text-[10px] text-white/30 mt-2 leading-snug">{t('gnLimits')}</p>
+      </Collapsible>
+    </Section>
   )
 }
 
@@ -726,7 +793,7 @@ function SettingsPresetsSection() {
   }
 
   return (
-    <Section title={t('settingsPresetsTitle')}>
+    <Section title={t('settingsPresetsTitle')} anchor="presets">
       <p className="text-[10px] text-white/30 mb-2.5 leading-tight">{t('settingsPresetsSub')}</p>
 
       {s.settingsPresets.length > 0 ? (
@@ -804,12 +871,16 @@ function SettingsPresetsSection() {
 function LanguageTab() {
   const { lang, setLang } = useSettings()
   const t = useT()
+  // English first, as on the welcome screen and in the defaults. Each
+  // language is written in itself - the one person who needs this control
+  // most is the one who cannot read the language it is currently set to.
   const LANGS: { val: Lang; label: string; flag: JSX.Element }[] = [
-    { val: 'ru', label: 'Русский', flag: <FlagRU /> },
     { val: 'en', label: 'English', flag: <FlagUS /> },
+    { val: 'ru', label: 'Русский', flag: <FlagRU /> },
+    { val: 'uk', label: 'Українська', flag: <FlagUA /> },
   ]
   return (
-    <Section title={t('language')}>
+    <Section title={t('language')} anchor="lang">
       <div className="grid grid-cols-3 gap-2.5">
         {LANGS.map(({ val, label, flag }) => {
           const active = lang === val
@@ -837,16 +908,6 @@ function LanguageTab() {
           )
         })}
 
-        {/* Placeholder for a future language */}
-        <div
-          className="flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl text-sm"
-          style={{ border: '1px dashed rgba(255,255,255,0.18)', color: 'rgba(255,255,255,0.3)' }}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24">
-            <path d="M12 5v14M5 12h14"/>
-          </svg>
-          <span className="text-[11px]">{t('langSoon')}</span>
-        </div>
       </div>
     </Section>
   )
@@ -886,273 +947,153 @@ function Stat({ value, label }: { value: number; label: string }) {
   )
 }
 
-function DynamicSwatch({ hex, active, onClick, title }: { hex: string; active: boolean; onClick: () => void; title: string }) {
+/* What the player has actually been used for.
+ *
+ * Every figure here comes from the same three records - a total, a bucket
+ * per day, a bucket per artist - so none of them can disagree with
+ * another. They live in their own store, not in settings: "reset all
+ * settings" leaves them alone, a shared settings preset does not carry
+ * them, and an app update does not touch them, because the file they sit
+ * in is the user's data rather than the application's. */
+function ListeningSection() {
+  const t = useT()
+  const { listenedSec, byDay, artists, plays, firstAt } = useStats()
+  const askConfirm = useUI(s => s.askConfirm)
+  const resetStats = useStats(s => s.resetStats)
+  const lang = useSettings(s => s.lang)
+  const [open, setOpen] = useState(false)
+
+  const hh = (sec: number) => humanTime(sec, t)
+  const loc = lang === 'ru' ? 'ru-RU' : lang === 'uk' ? 'uk-UA' : 'en-GB'
+  const best = bestDay(byDay)
+  const run = streak(byDay)
+  const top = topArtists(artists, 4)
+
+  if (listenedSec <= 0) {
+    return (
+      <Section title={t('stListening')} anchor="stats">
+        <p className="text-[12px] text-white/35 leading-snug">{t('stEmpty')}</p>
+      </Section>
+    )
+  }
+
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className="w-8 h-8 rounded-full transition-all duration-200 relative overflow-hidden shrink-0"
-      style={{
-        background: hex,
-        transform: active ? 'scale(1.18)' : 'scale(1)',
-        boxShadow: active ? `0 0 8px 2px ${hex}88` : undefined,
-        outline: !active ? '2px dashed rgba(255,255,255,0.28)' : 'none',
-        outlineOffset: '2px',
-      }}
-    >
-      {active ? (
-        <svg className="absolute inset-0 m-auto w-3.5 h-3.5 text-white drop-shadow-md" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+    <Section title={t('stListening')} anchor="stats">
+      {/* The headline is the handle. The figure everyone comes for stays
+          visible while the section is shut, and the breakdown - which is
+          six tiles, a best day and a chart - only unrolls when asked. */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="icon-btn w-full rounded-xl px-4 py-3.5 text-left transition-all flex items-center gap-3"
+        style={{ background: 'rgba(var(--accent-rgb),0.1)', border: '1px solid rgba(var(--accent-rgb),0.22)' }}
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-[22px] font-bold text-white leading-none tabular-nums">{hh(listenedSec)}</span>
+          <span className="block text-[11px] text-white/45 mt-1.5 truncate">
+            {t('stTotal')}
+            {firstAt > 0 && ` · ${t('stSince')} ${new Date(firstAt).toLocaleDateString(loc, { day: 'numeric', month: 'long', year: 'numeric' })}`}
+          </span>
+        </span>
+        <svg className="w-4 h-4 shrink-0 transition-transform duration-300 ease-out"
+          style={{ color: 'var(--accent)', transform: open ? 'rotate(90deg)' : 'none' }}
+          fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+          <path d="M9 6l6 6-6 6" />
         </svg>
-      ) : (
-        <svg className="absolute inset-0 m-auto w-3 h-3 text-white/80 drop-shadow" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-        </svg>
-      )}
-    </button>
+      </button>
+
+      <div style={{ display: 'grid', gridTemplateRows: open ? '1fr' : '0fr', transition: 'grid-template-rows 0.3s cubic-bezier(0.16,1,0.3,1)' }}>
+        <div style={{ overflow: 'hidden' }}>
+          <div style={{ paddingTop: 8, opacity: open ? 1 : 0, transform: open ? 'none' : 'translateY(-4px)', transition: 'opacity 0.25s ease, transform 0.25s ease' }}>
+            <div className="grid grid-cols-2 gap-2">
+              <StatBox label={t('stWeek')} value={hh(lastDays(byDay, 7))} />
+              <StatBox label={t('stMonth')} value={hh(lastDays(byDay, 30))} />
+              <StatBox label={t('stPerDay')} value={hh(perActiveDay(listenedSec, byDay))} />
+              <StatBox label={t('stTracks')} value={plays.toLocaleString(loc)} />
+              <StatBox label={t('stDays')} value={String(daysListened(byDay))} />
+              <StatBox label={t('stStreak')} value={run > 0 ? `${run}` : '-'} />
+            </div>
+
+            {best && (
+              <div className="mt-2">
+                <StatBox label={`${t('stBest')} · ${new Date(best.day + 'T12:00').toLocaleDateString(loc, { day: 'numeric', month: 'short' })}`}
+                  value={hh(best.sec)} />
+              </div>
+            )}
+
+            {top.length > 0 && (
+              <div className="mt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35 mb-1.5">{t('stTopArtists')}</p>
+                <div className="space-y-1">
+                  {top.map((a, i) => (
+                    <div key={a.name} className="flex items-center gap-2.5">
+                      <span className="text-[11px] text-white/25 tabular-nums w-3 shrink-0">{i + 1}</span>
+                      <span className="text-[12px] text-white/80 truncate flex-1 min-w-0">{a.name}</span>
+                      {/* A bar against the leader, so the shape is readable
+                          without reading every number. */}
+                      <span className="h-1 rounded-full shrink-0" style={{
+                        width: `${Math.max(6, Math.round((a.sec / top[0].sec) * 56))}px`,
+                        background: 'var(--accent)', opacity: 0.55,
+                      }} />
+                      <span className="text-[11px] text-white/35 tabular-nums shrink-0 w-16 text-right">{hh(a.sec)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Quiet here, loud in the dialog. A full-width red bar at the
+                foot of the section shouts at everybody who ever opens it,
+                including the ones only reading their numbers; the warning
+                belongs on the step where something actually happens. */}
+            <div className="flex justify-end mt-3">
+              <button
+                onClick={async () => { if (await askConfirm(t('stResetAsk'), t('stReset'), true)) resetStats() }}
+                className="icon-btn px-2.5 py-1 rounded-lg text-[11px] transition-all"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)' }}
+              >
+                {t('stReset')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Section>
   )
 }
 
-function ThemeCard({ theme, active, label, sub, onClick }: { theme: Theme; active: boolean; label: string; sub: string; onClick: () => void }) {
-  // Per-theme inline styles for the little preview (tile + play button)
-  const p = {
-    default: { row: {}, tile: { background: 'linear-gradient(135deg,#3a3550,#262233)', border: '0.5px solid rgba(255,255,255,0.07)', borderRadius: 11 }, play: { background: 'var(--accent)', borderRadius: '50%', boxShadow: undefined as string | undefined }, playIcon: '#1a1626' },
-    glass:   { row: { background: 'rgba(255,255,255,0.08)', border: '0.5px solid rgba(255,255,255,0.18)', borderRadius: 12, padding: 6 }, tile: { background: 'rgba(var(--accent-rgb),0.25)', border: '0.5px solid rgba(255,255,255,0.25)', borderRadius: 12 }, play: { background: 'rgba(var(--accent-rgb),0.5)', border: '0.5px solid rgba(255,255,255,0.4)', borderRadius: '50%', boxShadow: undefined }, playIcon: '#fff' },
-    minimal: { row: {}, tile: { background: '#1b1b22', border: '0.5px solid rgba(255,255,255,0.1)', borderRadius: 4 }, play: { background: 'transparent', border: '1px solid rgba(var(--accent-rgb),0.7)', borderRadius: 4, boxShadow: undefined }, playIcon: 'var(--accent)' },
-    transparent: { row: { background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: 12, padding: 6, backdropFilter: 'blur(6px)' }, tile: { background: 'rgba(255,255,255,0.12)', border: '0.5px solid rgba(255,255,255,0.32)', borderRadius: 11 }, play: { background: 'rgba(var(--accent-rgb),0.6)', border: '0.5px solid rgba(255,255,255,0.5)', borderRadius: '50%', boxShadow: undefined }, playIcon: '#fff' },
-  }[theme]
-
+/* Not the Stat above: that one is the track-page counter and takes a
+   number. This is a labelled tile for the listening figures. */
+function StatBox({ label, value }: { label: string; value: string }) {
   return (
-    <button onClick={onClick} className="icon-btn text-left rounded-xl p-3 transition-all"
-      style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: active ? '2px solid rgba(var(--accent-rgb),0.6)' : '1px solid rgba(255,255,255,0.08)',
-      }}>
-      <div className="flex items-center justify-between mb-2.5">
-        <span className="text-[13px] font-medium" style={{ color: active ? 'var(--accent)' : 'rgba(255,255,255,0.85)' }}>{label}</span>
-        {active
-          ? <span className="w-[18px] h-[18px] rounded-full flex items-center justify-center" style={{ background: 'var(--accent)' }}>
-              <svg className="w-3 h-3" viewBox="0 0 20 20" fill="#1a1626"><path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-8 8a1 1 0 01-1.4 0l-4-4a1 1 0 011.4-1.4L8 12.6l7.3-7.3a1 1 0 011.4 0z" clipRule="evenodd"/></svg>
-            </span>
-          : <span className="w-[18px] h-[18px] rounded-full border" style={{ borderColor: 'rgba(255,255,255,0.25)' }} />}
-      </div>
-      <div className="flex items-center gap-2" style={p.row as React.CSSProperties}>
-        <div className="w-10 h-10 shrink-0" style={p.tile as React.CSSProperties} />
-        <div className="flex-1 min-w-0">
-          <div className="h-2 rounded-full mb-1.5" style={{ width: '70%', background: 'rgba(255,255,255,0.3)' }} />
-          <div className="h-1.5 rounded-full" style={{ width: '45%', background: 'rgba(255,255,255,0.14)' }} />
-        </div>
-        <div className="w-7 h-7 shrink-0 flex items-center justify-center" style={p.play as React.CSSProperties}>
-          <svg className="w-3.5 h-3.5 ml-px" viewBox="0 0 24 24" fill={p.playIcon}><path d="M8 5v14l11-7z"/></svg>
-        </div>
-      </div>
-      <p className="text-[10px] text-white/35 mt-2.5 truncate">{sub}</p>
-    </button>
-  )
-}
-
-function FsToggleRow({ label, active, onClick, disabled }: { label: string; active: boolean; onClick: () => void; disabled?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3" style={{ opacity: disabled ? 0.4 : 1 }}>
-      <span className="text-sm text-white/75">{label}</span>
-      <Toggle active={active} onClick={onClick} disabled={disabled} />
+    <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.04)' }}>
+      <p className="text-[13px] font-semibold text-white tabular-nums leading-none">{value}</p>
+      <p className="text-[10.5px] text-white/35 mt-1 truncate">{label}</p>
     </div>
   )
 }
 
-function Toggle({ active, onClick, disabled }: { active: boolean; onClick: () => void; disabled?: boolean }) {
+/* `anchor` is the handle the settings search scrolls to and flashes. It is
+   only on the sections somebody searches for by name; a section nobody would
+   type does not need one. */
+function Section({ title, children, anchor }: { title: string; children: React.ReactNode; anchor?: string }) {
   return (
-    <button onClick={disabled ? undefined : onClick} disabled={disabled} className="relative rounded-full transition-all duration-200 shrink-0"
-      style={{ width: 38, height: 22, background: active ? 'var(--accent)' : 'rgba(255,255,255,0.15)', cursor: disabled ? 'not-allowed' : 'pointer' }}>
-      <span className="absolute top-1/2 rounded-full bg-white transition-all duration-200"
-        style={{ width: 16, height: 16, transform: 'translateY(-50%)', left: active ? 20 : 3 }} />
-    </button>
-  )
-}
-
-function WallpaperSection({ active, wallpaperPath, onPick, onNone }: {
-  active: boolean; wallpaperPath: string; onPick: (p: string) => void; onNone: () => void
-}) {
-  const t = useT()
-  const { wallpaperBlur, setWallpaperBlur } = useSettings()
-  const [list, setList] = useState<{ name: string; path: string }[]>([])
-  const [dir, setDir] = useState('')
-  const load = () => { window.electronAPI?.listWallpapers?.().then(setList).catch(() => {}) }
-  useEffect(() => { window.electronAPI?.wallpapersDir?.().then(setDir).catch(() => {}); load() }, [])
-
-  return (
-    <>
-      <div className="flex items-center gap-2 mb-2">
-        <button onClick={() => window.electronAPI?.openWallpapers?.()}
-          className="icon-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white transition-all"
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
-          {t('openFolder')}
-        </button>
-        <button onClick={load}
-          className="icon-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white transition-all"
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v5h.582m15.356 2A8 8 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8 8 0 01-15.357-2m15.357 2H15"/></svg>
-          {t('refreshList')}
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <WpCard label={t('wallpaperNone')} active={!active} onClick={onNone} none />
-        {list.map(w => (
-          <WpCard key={w.path} label={w.name} active={active && wallpaperPath === w.path} onClick={() => onPick(w.path)} />
-        ))}
-      </div>
-
-      <div className="mt-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-white/80">{t('wallpaperBlur')}</span>
-          <span className="text-[11px] text-white/40 tabular-nums">{wallpaperBlur} px</span>
-        </div>
-        <input
-          type="range" min={0} max={30} step={1} value={wallpaperBlur}
-          onChange={e => setWallpaperBlur(Number(e.target.value))}
-          className="w-full" style={{ accentColor: 'var(--accent)' }}
-        />
-      </div>
-
-      {list.length === 0 && <p className="text-[11px] text-white/35 mt-2">{t('wallpapersEmpty')}</p>}
-      <p className="text-[10px] text-white/30 mt-2 leading-snug">{t('wallpapersHint')}</p>
-      {dir && <p className="text-[10px] text-white/25 mt-1 break-all">{dir}</p>}
-    </>
-  )
-}
-
-function WpCard({ label, active, onClick, none }: { label: string; active: boolean; onClick: () => void; none?: boolean }) {
-  return (
-    <button onClick={onClick}
-      className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-all"
-      style={{
-        background: active ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(255,255,255,0.05)',
-        border: active ? '1px solid rgba(var(--accent-rgb),0.45)' : '1px solid rgba(255,255,255,0.08)',
-        color: active ? '#fff' : 'rgba(255,255,255,0.6)',
-      }}>
-      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        {none
-          ? <path d="M18 6L6 18M6 6l12 12"/>
-          : <><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9l5 3-5 3z"/></>}
-      </svg>
-      <span className="truncate">{label}</span>
-    </button>
-  )
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
+    <div data-setting={anchor}>
       <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">{title}</p>
       {children}
     </div>
   )
 }
 
-// Collapsible block: a compact header row that reveals its content on click.
-// Keeps heavy, secondary sections from walling the tab. Content stays mounted
-// so it can animate open/close via a 0fr↔1fr grid-rows transition (handles
-// auto height) plus a fade.
-function Collapsible({ title, children, defaultOpen = false, preview }: { title: string; children: React.ReactNode; defaultOpen?: boolean; preview?: React.ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="icon-btn w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl transition-all text-left"
-        style={{ background: open ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)' }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = open ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.03)' }}
-      >
-        <span className="text-sm text-white/75 shrink-0">{title}</span>
-        <span className="flex items-center gap-2.5 min-w-0">
-          {!open && preview && <span className="min-w-0 truncate">{preview}</span>}
-          <svg className="w-4 h-4 text-white/40 transition-transform duration-300 ease-out shrink-0" style={{ transform: open ? 'rotate(90deg)' : 'none' }}
-            fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-            <path d="M9 6l6 6-6 6"/>
-          </svg>
-        </span>
-      </button>
-      <div style={{ display: 'grid', gridTemplateRows: open ? '1fr' : '0fr', transition: 'grid-template-rows 0.3s cubic-bezier(0.16,1,0.3,1)' }}>
-        <div style={{ overflow: 'hidden' }}>
-          <div className="px-0.5" style={{ paddingTop: 12, opacity: open ? 1 : 0, transform: open ? 'none' : 'translateY(-4px)', transition: 'opacity 0.25s ease, transform 0.25s ease' }}>
-            {children}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+// ── Flags (SVG - render identically across OSes, unlike emoji flags) ──────────
 
-// Small right-aligned summary shown on a collapsed Collapsible header.
-function PreviewText({ children }: { children: React.ReactNode }) {
-  return <span className="text-[11px] text-white/40 truncate">{children}</span>
-}
+// Twemoji flag emojis (CC-BY 4.0) - the open emoji set commonly used to show
+function FlagRU() { return <Flag code={FLAG_RU} alt="RU" /> }
+function FlagUS() { return <Flag code={FLAG_US} alt="US" /> }
+function FlagUA() { return <Flag code={FLAG_UA} alt="UA" /> }
 
-function RadioBtn({ active, onClick, label, sub, disabled }: { active: boolean; onClick: () => void; label: string; sub?: string; disabled?: boolean }) {
-  return (
-    <button
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-      className={`icon-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150
-        ${disabled ? 'opacity-35 cursor-not-allowed' : active ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
-    >
-      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all
-        ${active ? 'border-[var(--accent)]' : 'border-white/20'}`}>
-        {active && <div className="w-2 h-2 rounded-full" style={{ background: 'var(--accent)' }} />}
-      </div>
-      <div className="flex flex-col items-start min-w-0">
-        <span>{label}</span>
-        {sub && <span className="text-[10px] text-white/30 leading-tight">{sub}</span>}
-      </div>
-    </button>
-  )
-}
-
-// ── Flags (SVG — render identically across OSes, unlike emoji flags) ──────────
-
-// Twemoji flag emojis (CC-BY 4.0) — the open emoji set commonly used to show
-// flags cross-platform. Loaded as SVG from the jsDelivr CDN.
-function FlagImg({ code, alt }: { code: string; alt: string }) {
-  return (
-    <img
-      src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${code}.svg`}
-      alt={alt} width={30} height={30} className="shrink-0" style={{ objectFit: 'contain' }}
-    />
-  )
-}
-function FlagRU() { return <FlagImg code="1f1f7-1f1fa" alt="RU" /> }
-function FlagUS() { return <FlagImg code="1f1fa-1f1f8" alt="US" /> }
-
-// ── Performance ──────────────────────────────────────────────────────────────
-
-function PerfSection() {
-  const t = useT()
-  const s = useSettings()
-  const rows: [PerfKey, string, string][] = [
-    ['perfBigLists',       t('perfBig'),   t('perfBigSub')],
-    ['perfNoBlur',         t('perfBlur'),  t('perfBlurSub')],
-    ['perfNoHeroAnim',     t('perfHero'),  t('perfHeroSub')],
-    ['perfLowFps',         t('perfFps'),   t('perfFpsSub')],
-    ['perfPauseUnfocused', t('perfPause'), t('perfPauseSub')],
-    ['perfMiniOpaque',     t('perfMini'),  t('perfMiniSub')],
-  ]
-  return (
-    <>
-      <div className="flex flex-col gap-1">
-        {rows.map(([key, label, sub]) => (
-          <SystemToggle key={key} label={label} sub={sub} active={s[key]} onClick={() => s.setPerf(key, !s[key])} />
-        ))}
-      </div>
-      <p className="text-[11px] text-white/35 leading-relaxed mt-3 p-3 rounded-lg"
-        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-        {t('perfMiniNote')}
-      </p>
-    </>
-  )
-}
+/* A door into whatever is being worked on, from the user's side of it. The
+   button shuts the settings window before it opens anything, because the
+   point is to see the thing with nothing of ours on top of it. */
 
 // ── Versions / updates ───────────────────────────────────────────────────────
 
@@ -1186,7 +1127,7 @@ function VersionsTab() {
       <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
         <div className="min-w-0 flex-1">
           <p className="text-[11px] uppercase tracking-wider text-white/40">{t('versionsCurrent')}</p>
-          <p className="text-lg font-semibold text-white tabular-nums">{current ? `v${norm(current)}` : '—'}</p>
+          <p className="text-lg font-semibold text-white tabular-nums">{current ? `v${norm(current)}` : '-'}</p>
           <p className="text-xs mt-0.5" style={{ color: hasUpdate ? 'var(--accent)' : 'rgba(255,255,255,0.45)' }}>
             {hasUpdate ? `${t('versionsAvailable')} · v${norm(latest!.tag)}` : t('versionsUpToDate')}
           </p>
@@ -1213,7 +1154,7 @@ function VersionsTab() {
         </div>
       </div>
 
-      {/* Changelog — separated from the current-version card */}
+      {/* Changelog - separated from the current-version card */}
       <div className="pt-3 border-t border-white/[0.045]">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-white/35 mb-3">{t('versionsHistory')}</p>
         {sorted.length === 0 ? (
@@ -1233,7 +1174,7 @@ function VersionsTab() {
                   {r.date && <span className="ml-auto text-[11px] text-white/35">{new Date(r.date).toLocaleDateString()}</span>}
                 </div>
                 {r.name && r.name !== r.tag && <p className="text-xs text-white/55 mt-1">{r.name}</p>}
-                {r.body && <p className="text-[13px] text-white/55 mt-2 whitespace-pre-wrap leading-relaxed">{r.body.trim()}</p>}
+                {r.body && <ReleaseNotes body={r.body} />}
                 <button onClick={() => window.open(r.url)} className="text-[11px] text-white/40 hover:text-white/70 transition-colors mt-2">GitHub ↗</button>
               </div>
             )
@@ -1243,25 +1184,4 @@ function VersionsTab() {
       </div>
     </div>
   )
-}
-
-// ── Category icons ───────────────────────────────────────────────────────────
-
-function IconUser() {
-  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path strokeLinecap="round" d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
-}
-function IconPalette() {
-  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.5-.7 1.5-1.5 0-.4-.2-.8-.4-1-.3-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H16c3.3 0 6-2.7 6-6 0-4.4-4.5-8-10-8z"/></svg>
-}
-function IconSound() {
-  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><path d="M6 9v6M10 5v14M14 8v8M18 11v2"/></svg>
-}
-function IconSystem() {
-  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
-}
-function IconVersions() {
-  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 2v14M12 22v-2M5 7l7-5 7 5v6c0 3-3 5-7 7-4-2-7-4-7-7z"/></svg>
-}
-function IconInfo() {
-  return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".6" fill="currentColor"/></svg>
 }

@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useProfile, useUI, useToast } from '../store'
 import { sc, SCUser } from '../services/soundcloud'
+import { useMenuAnchor } from './menuAnchor'
 import { useT } from '../i18n'
+import { BAR_SPACE } from '../layout'
+import { IcoStroke as Ico } from './menuIcons'
 
 // Directory of people you follow. Search + pin them here; clicking anyone opens
 // the unified user page (ArtistPage) with all their tabs.
@@ -12,8 +15,7 @@ export function FriendsPage() {
   const t = useT()
   const [query, setQuery] = useState('')
   const [menu, setMenu] = useState<{ x: number; y: number; friend: SCUser } | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
+  const { data: shownMenu, ref: menuRef, style: menuStyle } = useMenuAnchor(menu, () => setMenu(null))
 
   useEffect(() => {
     if (!user || followings.length) return
@@ -21,34 +23,6 @@ export function FriendsPage() {
     sc.getFollowings(user.id).then(res => { if (!cancelled) setFollowings(res.collection ?? []) }).catch(() => {})
     return () => { cancelled = true }
   }, [user, followings.length, setFollowings])
-
-  useEffect(() => {
-    if (!menu) return
-    let x = menu.x, y = menu.y
-    const el = menuRef.current
-    if (el) {
-      const r = el.getBoundingClientRect()
-      if (x + r.width > window.innerWidth) x = window.innerWidth - r.width - 8
-      if (y + r.height > window.innerHeight) y = window.innerHeight - r.height - 8
-    }
-    setMenuPos({ x, y })
-  }, [menu])
-  useEffect(() => {
-    if (!menu) return
-    const close = () => setMenu(null)
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    const id = requestAnimationFrame(() => {
-      window.addEventListener('click', close)
-      window.addEventListener('contextmenu', close)
-      window.addEventListener('keydown', onKey)
-    })
-    return () => {
-      cancelAnimationFrame(id)
-      window.removeEventListener('click', close)
-      window.removeEventListener('contextmenu', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
 
   const av = (u: SCUser, size: string) => u.avatar_url?.replace('-large', size)
   const initials = (u: SCUser) => (u.full_name || u.username || '?').trim().slice(0, 2).toUpperCase()
@@ -71,8 +45,8 @@ export function FriendsPage() {
     return <div className="h-full flex items-center justify-center"><p className="text-sm text-white/40">{t('friendsEmpty')}</p></div>
   }
 
-  const menuItems = menu ? (() => {
-    const f = menu.friend
+  const menuItems = shownMenu ? (() => {
+    const f = shownMenu.friend
     const pinned = pinnedSet.has(f.id)
     return [
       { label: t('ctxOpenArtist'), icon: <Ico><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" /></Ico>, onClick: () => setArtistPage(f) },
@@ -98,7 +72,7 @@ export function FriendsPage() {
       </div>
 
       {/* Directory grid */}
-      <div className="flex-1 overflow-y-auto min-h-0 pb-2">
+      <div className="flex-1 overflow-y-auto min-h-0" style={{ paddingBottom: BAR_SPACE + 12 }}>
         {ordered.length === 0 ? (
           <p className="text-sm text-white/40 py-8 text-center">{t('friendsNotFound')}</p>
         ) : (
@@ -135,27 +109,20 @@ export function FriendsPage() {
       </div>
 
       {/* Context menu */}
-      {menu && (
+      {shownMenu && (
         <div
           ref={menuRef}
-          className="fixed z-[200] px-1.5 py-1.5 rounded-xl"
-          style={{
-            top: menuPos.y, left: menuPos.x, minWidth: 210,
-            background: 'rgba(20,20,26,0.97)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-            backdropFilter: 'blur(20px)',
-            animation: 'scale-in 0.12s ease',
-          }}
+          className="glass-panel fixed z-[200] px-1.5 py-1.5 rounded-xl"
+          style={{ ...menuStyle, minWidth: 210 }}
           onClick={e => e.stopPropagation()}
         >
           <div className="px-3 pt-2.5 pb-2.5 mb-1 flex gap-2.5 items-center border-b border-white/[0.04]">
-            {av(menu.friend, '-t120x120')
-              ? <img src={av(menu.friend, '-t120x120')} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
-              : <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/60 shrink-0">{initials(menu.friend)}</div>}
+            {av(shownMenu.friend, '-t120x120')
+              ? <img src={av(shownMenu.friend, '-t120x120')} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+              : <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/60 shrink-0">{initials(shownMenu.friend)}</div>}
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-white/90 truncate">{menu.friend.full_name || menu.friend.username}</p>
-              <p className="text-[11px] text-white/40 truncate">@{menu.friend.username}</p>
+              <p className="text-xs font-semibold text-white/90 truncate">{shownMenu.friend.full_name || shownMenu.friend.username}</p>
+              <p className="text-[11px] text-white/40 truncate">@{shownMenu.friend.username}</p>
             </div>
           </div>
           {menuItems.map((it, i) => (
@@ -176,6 +143,3 @@ export function FriendsPage() {
   )
 }
 
-function Ico({ children }: { children: React.ReactNode }) {
-  return <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
-}

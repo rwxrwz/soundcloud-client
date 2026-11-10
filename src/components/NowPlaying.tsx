@@ -1,18 +1,16 @@
 ﻿import { useRef, useEffect, useState, useCallback } from 'react'
-import { usePlayer, useUI, useSettings, useAccentHex, useProfile, useToast } from '../store'
+import { usePlayer, useUI, useAccentHex, useProfile, useToast } from '../store'
 import { sc } from '../services/soundcloud'
 import { skipFrame } from '../services/perf'
 import { useAudio } from '../hooks/useAudio'
 import { Visualizer } from './Visualizer'
 import { Slider } from './Slider'
-import { FullScreenPlayer } from './FullScreenPlayer'
+import { Marquee } from './Marquee'
 import { useT } from '../i18n'
 
 export function NowPlaying() {
   const analyserRef = useRef<AnalyserNode | null>(null)
   const { seek } = useAudio(analyserRef)
-  const titleRef = useRef<HTMLParagraphElement>(null)
-  const [isOverflow, setIsOverflow] = useState(false)
   const [localProgress, setLocalProgress] = useState<number | null>(null)
   const draggingRef = useRef(false)
 
@@ -20,8 +18,13 @@ export function NowPlaying() {
   // Ctrl+click the volume slider to type an exact percentage.
   const [volEditing, setVolEditing] = useState(false)
   const [volInput, setVolInput] = useState('')
+  /* Two halves of "is the person at the volume control right now": the row,
+     so a wheel over the mute icon counts, and the slider itself, so a drag
+     that leaves the row does not. Either one shows the reading. */
+  const [volHover, setVolHover] = useState(false)
+  const [volSliding, setVolSliding] = useState(false)
   const applyVol = () => { const n = parseInt(volInput, 10); if (!isNaN(n)) setVolume(Math.round(Math.min(1, Math.max(0, n / 100)) * 100) / 100); setVolEditing(false) }
-  const { setBgColor, setArtRgb, setShowTrackPage, setArtistPage, showQueue, setShowQueue, showFullscreen, setShowFullscreen, setPlaylistPickerTrack, setContextMenu, showTrackPage, artistPageUser, selectedAlbum } = useUI()
+  const { setBgColor, setArtRgb, setShowTrackPage, setArtistPage, showQueue, setShowQueue, setPlaylistPickerTrack, setContextMenu, showTrackPage, artistPageUser, selectedAlbum } = useUI()
   // Compact = the island is narrowed & floating over a browsing overlay. Hide the
   // artwork and secondary buttons there to keep it clean.
   const compact = !!(showTrackPage || artistPageUser || selectedAlbum)
@@ -39,9 +42,6 @@ export function NowPlaying() {
       sc.likeTrack(currentTrack.id).catch(() => { unlikeTrackOptimistic(currentTrack.id); showToast(t('errLike'), 'error') })
     }
   }
-  const playerStyle = useSettings(s => s.playerStyle)
-  // The separate fullscreen overlay is redundant when the whole home IS a player
-  const openFullscreen = () => { if (playerStyle !== 'fullscreen' && currentTrack) setShowFullscreen(true) }
   const t = useT()
   const accentHex = useAccentHex()
   const [artColor, setArtColor] = useState<[number, number, number]>([80, 80, 80])
@@ -58,11 +58,13 @@ export function NowPlaying() {
   useEffect(() => { artColorRef.current = artColor }, [artColor])
   useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying])
 
-  // Dominant color â€” sample 32Ã—32, average top-20% most vivid pixels
+  // Dominant color â€” sample 32Ã-32, average top-20% most vivid pixels
   useEffect(() => {
     if (!artwork) { setBgColor('#080808'); setArtColor([80, 80, 80]); setArtRgb([80, 80, 80]); return }
     const img = new Image()
     img.crossOrigin = 'anonymous'
+    // Remote artwork would taint the canvas the accent colour is sampled from;
+    // main patches the CORS headers back in, so crossOrigin above is enough.
     img.src = artwork
     img.onload = () => {
       try {
@@ -91,6 +93,9 @@ export function NowPlaying() {
         setBgColor(`rgb(${avgR},${avgG},${avgB})`)
       } catch {}
     }
+    // A cover that is still downloading when the track changes must not fire
+    // later and repaint the accent with the previous artwork.
+    return () => { img.onload = null }
   }, [artwork])
 
   // Beat-reactive glow behind artwork
@@ -129,16 +134,6 @@ export function NowPlaying() {
     return () => cancelAnimationFrame(rafId)
   }, [analyserRef])
 
-  // Marquee overflow detection
-  useEffect(() => {
-    const el = titleRef.current
-    if (!el) return
-    setIsOverflow(el.scrollWidth > el.clientWidth)
-    if (el.scrollWidth > el.clientWidth) {
-      el.style.setProperty('--marquee-offset', `-${el.scrollWidth - el.clientWidth}px`)
-    }
-  }, [currentTrack?.title])
-
   const displayProgress = localProgress !== null ? localProgress : progress
 
   const handleProgressChange = useCallback((v: number) => {
@@ -157,17 +152,16 @@ export function NowPlaying() {
 
   return (
     <>
-    {showFullscreen && <FullScreenPlayer analyserRef={analyserRef} seek={seek} />}
     <div className="h-[80px] flex items-center px-5 gap-6">
       {/* â”€â”€ Left: track info â”€â”€ */}
       <div className={`flex items-center gap-3 min-w-0 shrink-0 ${compact ? 'w-56' : 'w-72'}`}>
         {!compact && (
         <div
           ref={artworkDivRef}
-          onClick={openFullscreen}
+          onClick={() => { if (currentTrack) setShowTrackPage(true) }}
           onContextMenu={(e) => { if (!currentTrack) return; e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track: currentTrack }) }}
           className="relative w-14 h-14 rounded-xl overflow-hidden bg-white/5 shrink-0 cursor-pointer"
-          title={t('fullscreen')}
+          title={t('trackDetails')}
         >
           {artwork ? (
             <img key={artwork} src={artwork} alt="" className="w-full h-full object-cover scale-in" />
@@ -183,15 +177,12 @@ export function NowPlaying() {
 
         {currentTrack ? (
           <div key={currentTrack.id} className="min-w-0 flex-1 track-in">
-            <div className="marquee-container">
-              <p
-                ref={titleRef}
-                onClick={() => setShowTrackPage(true)}
-                className={`text-sm font-semibold text-white marquee-text cursor-pointer hover:opacity-80 transition-opacity duration-150 ${isOverflow ? 'overflow' : 'truncate'}`}
-              >
-                {currentTrack.title}
-              </p>
-            </div>
+            <Marquee
+              onClick={() => setShowTrackPage(true)}
+              className="text-sm font-semibold text-white cursor-pointer hover:opacity-80 transition-opacity duration-150"
+            >
+              {currentTrack.title}
+            </Marquee>
             <button
               onClick={() => currentTrack.user && setArtistPage(currentTrack.user)}
               className="text-xs text-white/40 truncate mt-0.5 max-w-full text-left hover:text-white/70 transition-colors duration-150"
@@ -314,20 +305,6 @@ export function NowPlaying() {
       <div className="flex flex-col items-end gap-2 w-52 shrink-0">
         <div className="flex items-center justify-end gap-1 w-full">
           <Visualizer analyserRef={analyserRef} />
-          {!compact && playerStyle !== 'fullscreen' && (
-          <button
-            onClick={openFullscreen}
-            title={t('fullscreen')}
-            className="icon-btn p-1.5 rounded-lg transition-all duration-150 active:scale-90"
-            style={{ color: 'rgba(255,255,255,0.4)' }}
-            onMouseEnter={e => ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)')}
-            onMouseLeave={e => ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)')}
-          >
-            <svg className="w-[17px] h-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3"/>
-            </svg>
-          </button>
-          )}
           {!compact && (
           <button
             onClick={() => setShowQueue(!showQueue)}
@@ -353,6 +330,8 @@ export function NowPlaying() {
           className="flex items-center gap-2 w-full"
           onWheel={(e) => setVolume(Math.round(Math.min(1, Math.max(0, volume - Math.sign(e.deltaY) * 0.05)) * 100) / 100)}
           onMouseDownCapture={(e) => { if (e.ctrlKey) { e.preventDefault(); e.stopPropagation(); setVolInput(String(Math.round(volume * 100))); setVolEditing(true) } }}
+          onMouseEnter={() => setVolHover(true)}
+          onMouseLeave={() => setVolHover(false)}
         >
           <button
             onClick={toggleMute}
@@ -383,7 +362,20 @@ export function NowPlaying() {
               style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(var(--accent-rgb),0.5)' }}
             />
           ) : (
-            <Slider value={volume} min={0} max={1} onChange={setVolume} onCommit={setVolume} color={accentHex} />
+            <>
+              <Slider value={volume} min={0} max={1} onChange={setVolume} onCommit={setVolume} color={accentHex} onActiveChange={setVolSliding} />
+              {/* The same reading the rail shows at full screen, in the one
+                  shape this bar has room for: beside the strip rather than
+                  above it, where the visualiser and the queue button already
+                  are. Its width is held whether or not it is showing, so the
+                  strip does not change length under the cursor. */}
+              <span
+                className="text-[10.5px] text-white/45 tabular-nums text-right shrink-0 pointer-events-none select-none"
+                style={{ width: 28, opacity: volHover || volSliding ? 1 : 0, transition: 'opacity 0.16s ease' }}
+              >
+                {Math.round(volume * 100)}%
+              </span>
+            </>
           )}
         </div>
       </div>

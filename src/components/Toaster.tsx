@@ -64,7 +64,7 @@ export function Toaster() {
               pointerEvents: 'auto',
               cursor: 'pointer',
               animation: 'toast-in 0.2s cubic-bezier(0.16,1,0.3,1)',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+              boxShadow: 'var(--sh-2)',
             }}
           >
             {ICONS[toast.type]}

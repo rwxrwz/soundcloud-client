@@ -30,3 +30,10 @@ CHANGELOG.md
 
 # Installed AppImage (built artifact kept in-repo for the launcher)
 /SoundCloud.AppImage
+
+# Reference material and bake recipes: 23MB of sketches, screenshots and
+# third-party video that has no business in a public history. The morph
+# recipe is kept, because a shipped asset is regenerated from it.
+templates/*
+!templates/morph-ss.html
+!templates/morph-bake-recv.py

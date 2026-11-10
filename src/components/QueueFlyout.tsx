@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { usePlayer, useUI, useAccentHex, useLyrics, useSettings } from '../store'
+import { usePlayer, useUI, useAccentHex, useLyrics } from '../store'
 import { sc } from '../services/soundcloud'
 import { useT } from '../i18n'
 
-// Fullscreen-only mini-queue: a corner button that pops a floating, animated
+// Home-only mini-queue: a corner button that pops a floating, animated
 // panel of the current queue (same UX as the palette flyout). Click a track to
 // jump to it. Mirrors QuickCustomize's open/close animation.
 export function QueueFlyout() {
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const close = () => { if (closing) return; setClosing(true); setTimeout(() => { setOpen(false); setClosing(false) }, 140) }
-  const { queue, queueIndex, setTrack, isPlaying } = usePlayer()
+  const { queue, queueIndex, setTrack, isPlaying, radioFrom } = usePlayer()
   const { setContextMenu } = useUI()
+  const editMode = useUI(s => s.editMode)
   const accentHex = useAccentHex()
   const lyricsAvail = useLyrics(s => s.available)
-  const theme = useSettings(s => s.theme)
   const t = useT()
   const activeRef = useRef<HTMLButtonElement>(null)
 
@@ -25,19 +25,25 @@ export function QueueFlyout() {
     }
   }, [open, closing])
 
+  /* Customising is not queue business, and the dock covers this corner -
+     through glass the button read as a disc sitting on top of the controls.
+     It steps aside while the mode is on, and does it by animating out rather
+     than being unmounted, so it leaves and comes back the way a control
+     should. Anything it had open goes with it. */
+  useEffect(() => { if (editMode) { setOpen(false); setClosing(false) } }, [editMode])
+
   return (
-    <div className="absolute z-30" style={{ right: 78, bottom: 22 }}>
+    <div className="absolute z-30 corner-dock" data-away={editMode ? 'true' : undefined}
+      style={{ right: 78, bottom: 22 }}>
       {/* invisible click-catcher */}
       {open && <div className="fixed inset-0" onClick={close} />}
 
       {open && (
         <div
-          className="absolute rounded-2xl flex flex-col"
+          className="glass-panel absolute rounded-2xl flex flex-col"
           style={{
             bottom: '118%', right: 0, width: 320, maxHeight: '70vh',
-            background: 'rgba(16,16,22,0.97)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            boxShadow: '0 14px 44px rgba(0,0,0,0.55)',
+            boxShadow: 'var(--sh-3)',
             transformOrigin: 'bottom right',
             animation: closing ? 'scale-out 0.13s ease forwards' : 'scale-in 0.14s ease',
           }}
@@ -56,18 +62,26 @@ export function QueueFlyout() {
               const active = i === queueIndex
               const art = sc.formatArtwork(track.artwork_url || track.user?.avatar_url, 't200x200')
               return (
+                <div key={`${track.id}-${i}`}>
+                {/* Where the player stopped playing what was asked for and
+                    started choosing. Said once, at the line, rather than on
+                    every row: it is a boundary, not a property of a track. */}
+                {radioFrom >= 0 && i === radioFrom && (
+                  <div className="flex items-center gap-2 px-2 pt-2.5 pb-1.5">
+                    <span className="text-[9px] uppercase tracking-wider shrink-0" style={{ color: 'var(--accent)' }}>{t('qRadio')}</span>
+                    <span className="h-px flex-1" style={{ background: 'rgba(var(--accent-rgb),0.25)' }} />
+                  </div>
+                )}
                 <button
-                  key={`${track.id}-${i}`}
                   ref={active ? activeRef : undefined}
                   onClick={() => { if (!active) setTrack(track, queue) }}
                   onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, track }) }}
-                  className="icon-btn w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left transition-colors"
+                  data-active={active ? 'true' : 'false'}
+                  className="icon-btn row-hover w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left transition-colors"
                   style={{
-                    background: active ? 'rgba(var(--accent-rgb),0.16)' : 'transparent',
+                    background: active ? 'rgba(var(--accent-rgb),0.16)' : undefined,
                     opacity: i < queueIndex ? 0.5 : 1,
                   }}
-                  onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)' }}
-                  onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                 >
                   <div className="w-9 h-9 rounded-md overflow-hidden shrink-0 bg-white/5">
                     {art && <img src={art} alt="" className="w-full h-full object-cover" />}
@@ -87,6 +101,7 @@ export function QueueFlyout() {
                   </div>
                   {active && <PlayingBars color={accentHex} playing={isPlaying} />}
                 </button>
+                </div>
               )
             })}
           </div>
@@ -96,12 +111,10 @@ export function QueueFlyout() {
       <button
         onClick={() => (open ? close() : setOpen(true))}
         title={t('queue')}
-        className="icon-btn w-11 h-11 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 hover:scale-105"
+        className={`icon-btn w-11 h-11 flex items-center justify-center transition-all duration-150 active:scale-90 hover:scale-105${open ? '' : ' glass-island'}`}
         style={{
-          background: open ? 'var(--accent)' : (theme === 'transparent' ? 'rgba(20,20,26,0.35)' : 'rgba(20,20,26,0.9)'),
-          backdropFilter: theme === 'transparent' && !open ? 'blur(12px)' : undefined,
-          border: '1px solid rgba(255,255,255,0.14)',
-          boxShadow: theme === 'transparent' && !open ? '0 6px 22px rgba(0,0,0,0.25)' : '0 6px 22px rgba(0,0,0,0.45)',
+          borderRadius: 9999,
+          ...(open ? { background: 'var(--accent)', border: '1px solid rgba(255,255,255,0.2)', boxShadow: 'var(--sh-1)' } : {}),
           color: open ? '#fff' : 'rgba(255,255,255,0.85)',
         }}
       >
@@ -120,7 +133,7 @@ function QueueIcon() {
   )
 }
 
-function PlayingBars({ color, playing }: { color: string; playing: boolean }) {
+export function PlayingBars({ color, playing }: { color: string; playing: boolean }) {
   return (
     <span className="flex items-end gap-[2px] shrink-0 h-3.5" aria-hidden>
       {[0, 1, 2].map(i => (

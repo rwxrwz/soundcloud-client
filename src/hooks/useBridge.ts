@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { usePlayer } from '../store'
+import { usePlayer, useSettings, useUI, useLyrics, resolveAccentHex } from '../store'
 import { audioBus } from './audioBus'
 import { sc } from '../services/soundcloud'
 import type { SCTrack } from '../services/soundcloud'
@@ -18,6 +18,9 @@ function mapTrack(t: SCTrack) {
     artist: t.user?.username ?? '',
     artworkUrl: rawArt ? sc.formatArtwork(rawArt, 't200x200') : null,
     duration: Math.round((t.duration ?? 0) / 1000),
+    /* Three-valued in the store - unknown, yes, no - and only a definite
+       yes is worth a badge. */
+    lyr: useLyrics.getState().available[Number(t.id)] === true || undefined,
   }
 }
 
@@ -25,15 +28,36 @@ function mapTrack(t: SCTrack) {
 // Read-only mirror + command relay; the store stays the source of truth.
 export function useBridge() {
   const lastSig = useRef('')
+  /* The queue half of the signature, kept beside the array it was built
+     from. Rebuilding it meant walking every track and reading the lyrics
+     store once per track, then stringifying the lot - on every write to any
+     of four stores, which includes setProgress four times a second. With a
+     likes queue of a few thousand that is tens of kilobytes of string built
+     and thrown away several times a second, only to conclude that nothing
+     changed; during a lyrics scan, once per scanned track on top. The array
+     is replaced rather than mutated whenever the queue really changes, so
+     its identity answers the question without touching its contents. */
+  const lastQueue = useRef<{ src: unknown; sig: string }>({ src: null, sig: '' })
+  const lastMarks = useRef<unknown>(null)
 
   // Full snapshot on a meaningful change (track / queue / volume / play-pause).
   useEffect(() => {
     if (!window.electronAPI?.bridgeSendState) return
     const push = () => {
       const s = usePlayer.getState()
+      const set = useSettings.getState()
+      const accent = resolveAccentHex(set.accent, set.customAccent, useUI.getState().artRgb)
       // Signature omits position (that's the job of the lighter 'progress' tick),
       // so per-second progress updates don't spam full snapshots.
-      const sig = JSON.stringify([s.currentTrack?.id ?? null, s.isPlaying, s.volume, s.queueIndex, s.shuffle, s.repeat, s.queue.map(t => t.id)])
+      const marks = useLyrics.getState().available
+      if (lastQueue.current.src !== s.queue || lastMarks.current !== marks) {
+        lastQueue.current = {
+          src: s.queue,
+          sig: s.queue.map(t => `${t.id}${marks[Number(t.id)] === true ? 'L' : ''}`).join(','),
+        }
+        lastMarks.current = marks
+      }
+      const sig = `${s.currentTrack?.id ?? ''}|${s.isPlaying}|${s.volume}|${s.queueIndex}|${s.shuffle}|${s.repeat}|${accent}|${lastQueue.current.sig}`
       if (sig === lastSig.current) return
       lastSig.current = sig
       window.electronAPI!.bridgeSendState!({
@@ -45,10 +69,16 @@ export function useBridge() {
         queueIndex: s.currentTrack ? s.queueIndex : -1,
         shuffle: s.shuffle,
         repeat: s.repeat === 'none' ? 'off' : s.repeat,   // store 'none' -> contract 'off'
+        accent,
       })
     }
     push()
-    return usePlayer.subscribe(push)
+    /* Three stores, because the accent is not the player's: it is a setting,
+       and in "from the artwork" mode it is a reading off the current cover.
+       Subscribing to the player alone meant a theme change reached the phone
+       only when the song did. The signature above drops the repeats. */
+    const offs = [usePlayer.subscribe(push), useSettings.subscribe(push), useUI.subscribe(push), useLyrics.subscribe(push)]
+    return () => { for (const off of offs) off() }
   }, [])
 
   // Progress tick ~1/sec, only while playing.
@@ -83,8 +113,21 @@ export function useBridge() {
     let bars: number[] = []
     let lastSpec = 0
 
+    /* Nobody connected means nobody to measure for. The companion is
+       optional and most people never open it, so without this the whole
+       analyser loop and its fifty messages a second ran for an empty room
+       whenever music played - including minimised, since background
+       throttling is deliberately off. Re-asked every couple of seconds,
+       which is cheap and picks a companion up on its own. */
+    let listeners = false
+    let askedAt = 0
     const tick = () => {
       const tNow = performance.now()
+      if (tNow - askedAt > 2000) {
+        askedAt = tNow
+        window.electronAPI?.bridgeHasClients?.().then(v => { listeners = !!v }).catch(() => { listeners = false })
+      }
+      if (!listeners) return
       const full = audioBus.analyser
       if (!full || !usePlayer.getState().isPlaying) return
       // Prefer the dedicated 2048-pt node for bass; fall back to the shared 256-pt

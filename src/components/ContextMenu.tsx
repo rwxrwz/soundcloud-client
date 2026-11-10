@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { usePlayer, useProfile, useUI, useToast } from '../store'
 import { sc } from '../services/soundcloud'
 import { findGeniusLink, geniusSearchUrl, type GeniusLink } from '../services/genius'
 import { estimateMp3Seconds, transcodeIntoJob } from '../services/mp3Encode'
+import { useMenuAnchor } from './menuAnchor'
 import { useT } from '../i18n'
+import { Ico, IcoStroke } from './menuIcons'
 
 function fmt(n?: number) {
   if (!n) return '0'
@@ -15,7 +17,7 @@ function fmt(n?: number) {
 
 export function ContextMenu() {
   // Only subscribe to what actually changes the menu. Actions are stable refs, so
-  // they come from getState() — subscribing to the whole store (useUI()/usePlayer()
+  // they come from getState() - subscribing to the whole store (useUI()/usePlayer()
   // /useProfile()/useToast()) re-rendered this on every player-progress tick, which
   // is what made the menu feel janky.
   const contextMenu = useUI(s => s.contextMenu)
@@ -25,13 +27,25 @@ export function ContextMenu() {
   const { setTrack } = usePlayer.getState()
   const { likeTrackOptimistic, unlikeTrackOptimistic } = useProfile.getState()
   const showToast = useToast.getState().show
-  const ref = useRef<HTMLDivElement>(null)
-  const subRef = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ x: 0, y: 0 })
   const [genius, setGenius] = useState<GeniusLink | null>(null)
   // Download submenu (portal): coords when open, null when closed.
   const [sub, setSub] = useState<{ x: number; y: number } | null>(null)
   useEffect(() => { setSub(null) }, [contextMenu])
+  /* The submenu leaves the way its parent does, but it is the parent's to
+     close - its own listeners would fight the ones above, and it must not
+     take the parent's place in the one-menu-at-a-time list. */
+  const subAnchor = useMenuAnchor(sub, undefined, { child: true })
+  /* The submenu counts as inside, and it has to be the element the
+     submenu is actually drawn on.
+     
+     This used to point at a ref of its own that was never attached to
+     anything, so it read as null forever and every click in the submenu
+     looked like a click outside the parent. The parent's listener runs in
+     the capture phase, before React sees the event, and it calls
+     stopPropagation on anything outside - so the row under the cursor
+     never fired. Nothing happened, nothing failed, and nothing was
+     logged, which is a hard shape of bug to chase. */
+  const { data, ref, style } = useMenuAnchor(contextMenu, () => setContextMenu(null), { inside: subAnchor.ref })
 
   // Resolve while the menu is open, so clicking is a direct window.open. Until it
   // lands (or if it fails) the item falls back to a Genius search for the title.
@@ -46,57 +60,8 @@ export function ContextMenu() {
     return () => { cancelled = true }
   }, [contextMenu?.track.id])
 
-  // Position + keep on-screen. useLayoutEffect so the final coords are applied
-  // before the browser paints — otherwise the menu flashes at the previous/zero
-  // position and visibly jumps ("opens crooked").
-  useLayoutEffect(() => {
-    if (!contextMenu) return
-    const el = ref.current
-    let x = contextMenu.x, y = contextMenu.y
-    if (el) {
-      const r = el.getBoundingClientRect()
-      if (x + r.width > window.innerWidth) x = window.innerWidth - r.width - 8
-      if (y + r.height > window.innerHeight) y = window.innerHeight - r.height - 8
-    }
-    setPos({ x: Math.max(8, x), y: Math.max(8, y) })
-  }, [contextMenu])
-
-  useEffect(() => {
-    if (!contextMenu) return
-    const close = () => setContextMenu(null)
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    // A left-click outside the menu/submenu closes it AND is swallowed: caught in
-    // the capture phase and stopped before it reaches whatever is underneath, so
-    // nothing in the player gets triggered by the same click. Clicks inside the
-    // menu (or its submenu) pass through so items still work.
-    const onClickCapture = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (ref.current?.contains(target) || subRef.current?.contains(target)) return
-      e.preventDefault()
-      e.stopPropagation()
-      close()
-    }
-    // Right-click elsewhere: just close (lets a track's own handler reopen it).
-    const onCtx = () => close()
-    // Attach on the next frame so the very click/contextmenu event that opened
-    // the menu doesn't immediately close it.
-    const id = requestAnimationFrame(() => {
-      window.addEventListener('click', onClickCapture, true)
-      window.addEventListener('contextmenu', onCtx)
-      window.addEventListener('resize', close)
-      window.addEventListener('keydown', onKey)
-    })
-    return () => {
-      cancelAnimationFrame(id)
-      window.removeEventListener('click', onClickCapture, true)
-      window.removeEventListener('contextmenu', onCtx)
-      window.removeEventListener('resize', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [contextMenu, setContextMenu])
-
-  if (!contextMenu) return null
-  const track = contextMenu.track
+  if (!data) return null
+  const track = data.track
   const isLiked = likes.some(l => Number(l.id) === Number(track.id))
 
   // Like/unlike: optimistic with rollback (same pattern as TrackActions).
@@ -112,9 +77,9 @@ export function ContextMenu() {
   }
 
   // Download. Two formats:
-  //   'original' — whatever SoundCloud serves, saved untouched. That is .m4a for
+  //   'original' - whatever SoundCloud serves, saved untouched. That is .m4a for
   //                HLS tracks and .mp3 for the rare plain ones. Fast, lossless.
-  //   'mp3'      — a real MP3. HLS sources have to be re-encoded, which takes a
+  //   'mp3'      - a real MP3. HLS sources have to be re-encoded, which takes a
   //                while; plain sources are already MP3 and are just saved.
   // `mode` picks the destination: the downloads folder or a save dialog.
   const download = async (mode: 'folder' | 'dialog', format: 'original' | 'mp3') => {
@@ -168,10 +133,52 @@ export function ContextMenu() {
       if (job) await api?.dlClose?.(job.id, false).catch(() => {})
       toast.dismiss(toastId)
       // Errors raised in main arrive wrapped ("Error invoking remote method ..."),
-      // so match loosely — NO_STREAM can come from either side now.
+      // so match loosely - NO_STREAM can come from either side now.
       const msg = (e as Error)?.message ?? ''
       const unavailable = msg === 'DRM' || msg.includes('NO_STREAM')
       showToast(unavailable ? t('dlUnavailable') : t('dlFailed'), 'error')
+    }
+  }
+
+  /* The cover, saved as a picture.
+   *
+   * SoundCloud keeps every size of an upload behind the same name, so the
+   * one in the queue - `-large`, which is 100 square - is not what anyone
+   * wants on disk. `-original` is the file as it was uploaded; it is not
+   * always there, so a miss falls back to `-t500x500`, which always is.
+   * The job's file is still empty when dlFill throws, so the second attempt
+   * writes into it as if the first had never happened. */
+  const downloadArt = async (mode: 'folder' | 'dialog') => {
+    const raw = track.artwork_url || track.user?.avatar_url
+    if (!raw) { showToast(t('dlNoArt'), 'error'); return }
+    const clean = (x: string) => x.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim()
+    const name = `${clean(track.user?.username ?? 'Unknown')} - ${clean(track.title ?? 'track')}`.slice(0, 180)
+    const ext = (raw.match(/\.(jpe?g|png)(?:\?|$)/i)?.[1] ?? 'jpg').toLowerCase()
+
+    const api = window.electronAPI
+    const toast = useToast.getState()
+    const toastId = toast.show(t('dlStarted'), 'info', true)
+    let job: { id: number; dest: string } | null = null
+    try {
+      job = (await api?.dlOpen?.(mode, name, [ext])) ?? null
+      if (!job) { toast.dismiss(toastId); return }   // save dialog cancelled
+      /* Swap whatever size token the url happens to carry, not just
+         `-large`: the API gives `-large`, but an avatar fallback or a
+         cached entry can arrive already sized. */
+      const sized = (size: string) =>
+        raw.replace(/-(?:large|original|badge|mini|tiny|small|crop|t\d+x\d+)(\.[a-z]+)/i, `-${size}$1`)
+      try {
+        await api!.dlFill!(job.id, sized('original'), 'progressive')
+      } catch {
+        await api!.dlFill!(job.id, sc.formatArtwork(raw, 't500x500'), 'progressive')
+      }
+      await api!.dlClose!(job.id, true)
+      toast.dismiss(toastId)
+      toast.show(t('dlDone'), 'success')
+    } catch {
+      if (job) await api?.dlClose?.(job.id, false).catch(() => {})
+      toast.dismiss(toastId)
+      showToast(t('dlFailed'), 'error')
     }
   }
 
@@ -200,9 +207,24 @@ export function ContextMenu() {
       onClick: () => { download('dialog', 'mp3') },
     },
     {
+      label: t('ctxDlArt'), sub: t('ctxDlArtSub'), sep: true,
+      icon: <IcoStroke><path d="M3 5h18v14H3z"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="9" r="1.5"/></IcoStroke>,
+      onClick: () => { downloadArt('folder') },
+    },
+    {
+      label: t('ctxDlArtAs'), icon: dlPlace,
+      onClick: () => { downloadArt('dialog') },
+    },
+    {
       label: t('ctxOpenDownloads'), sep: true,
       icon: <IcoStroke><path d="M4 4h6l2 2h8v12H4z"/><path d="M8 13h8"/></IcoStroke>,
-      onClick: () => { window.electronAPI?.openDownloads?.() },
+      /* Said out loud when it fails. The folder opening is the whole
+         point of the row, so a silent no-op is the one outcome it must
+         not have. */
+      onClick: async () => {
+        const err = await window.electronAPI?.openDownloads?.()
+        if (err) showToast(`${t('ctxOpenDownloads')}: ${err}`, 'error')
+      },
     },
   ]
 
@@ -210,11 +232,10 @@ export function ContextMenu() {
   const openDownloadSub = (el: HTMLElement) => {
     const r = el.getBoundingClientRect()
     const openLeft = r.right + 200 > window.innerWidth
-    setSub({
-      x: openLeft ? Math.max(8, r.left - 196) : r.right - 2,
-      // Tall enough for five rows plus the separator, so it never hangs off-screen
-      y: Math.max(8, Math.min(r.top - 6, window.innerHeight - 212)),
-    })
+    /* Only the side it opens on is decided here. Fitting it on screen is
+       the anchor's job, which measures the thing instead of assuming five
+       rows and a separator come to 212px. */
+    setSub({ x: openLeft ? Math.max(8, r.left - 196) : r.right - 2, y: r.top - 6 })
   }
 
   const items = [
@@ -227,9 +248,7 @@ export function ContextMenu() {
       label: t('ctxAddNext'),
       icon: <Ico><path d="M3 18h13v-2H3v2zm0-5h10v-2H3v2zm0-7v2h13V6H3zm16 5v-3h-2v3h-3v2h3v3h2v-3h3v-2h-3z"/></Ico>,
       onClick: () => {
-        const { queue, queueIndex } = usePlayer.getState()
-        const at = queueIndex + 1
-        usePlayer.setState({ queue: [...queue.slice(0, at), track, ...queue.slice(at)] })
+        usePlayer.getState().queueNext(track)
       },
     },
     {
@@ -280,18 +299,8 @@ export function ContextMenu() {
     <>
     <div
       ref={ref}
-      className="fixed z-[200] px-1.5 py-1.5 rounded-xl"
-      style={{
-        top: pos.y, left: pos.x, minWidth: 190,
-        maxHeight: 'calc(100vh - 16px)', overflowY: 'auto', overflowX: 'hidden',
-        background: 'rgba(20,20,26,0.97)',
-        border: '1px solid rgba(255,255,255,0.1)',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(20px)',
-        animation: 'scale-in 0.12s ease',
-        transformOrigin: 'top left',
-        willChange: 'transform',
-      }}
+      className="glass-panel fixed z-[200] px-1.5 py-1.5 rounded-xl"
+      style={{ ...style, minWidth: 190, willChange: 'transform' }}
       onClick={e => e.stopPropagation()}
     >
       {/* Track info header */}
@@ -339,20 +348,11 @@ export function ContextMenu() {
         )
       )}
     </div>
-    {sub && createPortal(
+    {subAnchor.data && createPortal(
       <div
-        ref={subRef}
-        className="fixed z-[210] py-1.5 rounded-xl"
-        style={{
-          top: sub.y, left: sub.x, minWidth: 200,
-          background: 'rgba(20,20,26,0.97)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(20px)',
-          animation: 'scale-in 0.12s ease',
-          transformOrigin: 'top left',
-          willChange: 'transform',
-        }}
+        ref={subAnchor.ref}
+        className="glass-panel fixed z-[210] py-1.5 rounded-xl"
+        style={{ ...subAnchor.style, minWidth: 200, willChange: 'transform' }}
         onClick={e => e.stopPropagation()}
       >
         {downloadSub.map((s, j) => (
@@ -392,14 +392,3 @@ function Stat({ v, d, fill }: { v: string; d: string; fill?: boolean }) {
   )
 }
 
-function Ico({ children }: { children: React.ReactNode }) {
-  return <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">{children}</svg>
-}
-
-function IcoStroke({ children }: { children: React.ReactNode }) {
-  return (
-    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {children}
-    </svg>
-  )
-}

@@ -1,0 +1,168 @@
+<!-- Generator for src/assets/morph.webm - the baked word morph on the welcome
+     screen. Kept in the repo on purpose: the first copy of this lived only in
+     a temp scratchpad and went with it.
+
+     To rebuild:
+       1. python3 templates/morph-bake-recv.py <dir>      # catches the frames
+       2. open this file through the dev server, e.g.
+          http://localhost:5173/@fs/<abs path>/templates/morph-ss.html
+       3. in its console:  window.__bake(30, 3, 2)        # 30fps, SS 3, size x2
+       4. ffmpeg -framerate 30 -i <dir>/f%04d.png -c:v libvpx-vp9 \
+            -pix_fmt yuva420p -b:v 0 -crf 24 -row-mt 1 -an src/assets/morph.webm
+     Words, slot and the gooey threshold are the panel's defaults; they are
+     what the shipped loop was baked from. -->
+<!doctype html><html lang="ru"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Text morph - суперсэмплинг</title>
+<style>
+  body{margin:0;background:#080808;color:#fff;min-height:100vh;display:grid;grid-template-rows:1fr auto;
+       font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif}
+  .scene{display:grid;place-items:center;position:relative;overflow:hidden}
+  .glow{position:absolute;width:62vw;height:62vw;max-width:760px;max-height:760px;border-radius:50%;
+        background:radial-gradient(circle,var(--accent,#f7f7f7) 0%,transparent 68%);opacity:.14;filter:blur(60px)}
+  canvas{position:relative;max-width:100%}
+  .panel{border-top:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);padding:13px 16px;
+         display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));align-items:center;font-size:12px}
+  label{display:grid;gap:4px;color:rgba(255,255,255,.6)}
+  b{color:#fff;font-weight:600}
+  input[type=range]{width:100%;accent-color:#2b6cf6}
+  textarea{width:100%;height:80px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+           border-radius:9px;color:#fff;padding:7px 9px;font:inherit;font-size:12px;outline:none;resize:vertical}
+</style>
+<!-- The threshold runs inside the canvas pipeline, on the 3x surface. -->
+<svg width="0" height="0" style="position:absolute"><defs>
+  <filter id="goo" color-interpolation-filters="sRGB">
+    <feColorMatrix in="SourceGraphic" type="matrix" id="mx"
+      values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 25 -9" result="g"/>
+    <feComposite in="SourceGraphic" in2="g" operator="atop"/>
+  </filter>
+</defs></svg>
+
+<div class="scene"><div class="glow"></div><canvas id="cv"></canvas></div>
+<div class="panel">
+  <label>слова<textarea id="words">soundcloud
+opensource
+ad-free
+smooth
+with lyrics</textarea></label>
+  <label>слот <b id="vSlot">2400</b> мс<input type="range" id="slot" min="800" max="4000" step="100" value="2400"></label>
+  <label>размытие <b id="vBlur">10</b> px<input type="range" id="blur" min="2" max="40" step="1" value="10"></label>
+  <label>порог <b id="vThr">25</b> / сдвиг <b id="vOff">9</b>
+    <input type="range" id="thr" min="8" max="45" step="1" value="25">
+    <input type="range" id="off" min="2" max="22" step="1" value="9"></label>
+  <label>масштаб входа <b id="vDown">1.00</b><input type="range" id="down" min="40" max="100" step="2" value="100"></label>
+  <label>масштаб ухода <b id="vUp">1.00</b><input type="range" id="up" min="100" max="180" step="2" value="100"></label>
+  <label>жирность <b id="vW">800</b><input type="range" id="weight" min="300" max="900" step="100" value="800"></label>
+  <label>кегль <b id="vSize">86</b> px<input type="range" id="size" min="34" max="150" step="2" value="86"></label>
+  <label>суперсэмплинг <b id="vSS">3</b>x<input type="range" id="ss" min="1" max="4" step="1" value="3"></label>
+</div>
+
+<script>
+const $ = id => document.getElementById(id)
+const cv = $('cv'), ctx = cv.getContext('2d')
+// Two offscreen surfaces at SS x: one to lay the blurred words down, one to
+// hold the thresholded result. The visible canvas then draws that down to 1x,
+// and the downscale averages SS*SS subpixels into each real pixel - which is
+// exactly what antialiasing is. Thresholding at the final size, as a CSS filter
+// does, has no subpixels left to average, so the edges can only be hard.
+const lay = document.createElement('canvas'), lctx = lay.getContext('2d')
+const thr = document.createElement('canvas'), tctx = thr.getContext('2d')
+
+const FONT = s => `${+$('weight').value} ${s}px ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif`
+const easeInOut = u => (u < .5 ? 2*u*u : 1 - Math.pow(-2*u + 2, 2) / 2)
+let words = [], W = 0, H = 0, SS = 3
+
+function layout() {
+  SS = +$('ss').value
+  words = $('words').value.split(/[\n,]/).map(s => s.trim()).filter(Boolean)
+  if (!words.length) words = ['soundcloud']
+  const size = +$('size').value, blur = +$('blur').value
+  lctx.font = FONT(size)
+  const widest = Math.max(...words.map(w => lctx.measureText(w).width))
+  // Room for the blur and the upscale so nothing is clipped at the edges.
+  W = Math.ceil(widest * 1.9 + blur * 8)
+  H = Math.ceil(size * 2.4 + blur * 6)
+  const dpr = devicePixelRatio || 1
+  cv.style.width = W + 'px'; cv.style.height = H + 'px'
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr)
+  lay.width = thr.width = Math.round(W * dpr * SS)
+  lay.height = thr.height = Math.round(H * dpr * SS)
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'
+}
+
+function phase(i, t) {
+  const n = words.length, slot = +$('slot').value, total = slot * n
+  const step = 1 / n
+  let p = (((t - i * slot) % total) + total) % total / total
+  const half = step / 2
+  const B = +$('blur').value, down = +$('down').value / 100, up = +$('up').value / 100
+  if (p < half) { const u = easeInOut(p / half);  return { a: u,     b: B * (1 - u), s: down + (1 - down) * u } }
+  if (p < step) {                                  return { a: 1,     b: 0,           s: 1 } }
+  if (p < step * 1.5) { const u = easeInOut((p - step) / half); return { a: 1 - u, b: B * u, s: 1 + (up - 1) * u } }
+  return null
+}
+
+function frame(t) {
+  const dpr = devicePixelRatio || 1, k = dpr * SS
+  lctx.setTransform(1, 0, 0, 1, 0, 0); lctx.clearRect(0, 0, lay.width, lay.height)
+  lctx.textAlign = 'center'; lctx.textBaseline = 'middle'
+  lctx.fillStyle = '#f7f7f7'
+  const size = +$('size').value
+  words.forEach((w, i) => {
+    const ph = phase(i, t)
+    if (!ph) return
+    lctx.save()
+    lctx.globalAlpha = ph.a
+    lctx.filter = ph.b > 0.05 ? `blur(${(ph.b * k).toFixed(2)}px)` : 'none'
+    lctx.translate(lay.width / 2, lay.height / 2)
+    lctx.scale(ph.s, ph.s)
+    lctx.font = FONT(size * k)
+    lctx.fillText(w, 0, 0)
+    lctx.restore()
+  })
+  tctx.setTransform(1, 0, 0, 1, 0, 0); tctx.clearRect(0, 0, thr.width, thr.height)
+  tctx.filter = 'url(#goo)'
+  tctx.drawImage(lay, 0, 0)
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height)
+  ctx.drawImage(thr, 0, 0, cv.width, cv.height)
+  if (!window.__hold) window.__raf = requestAnimationFrame(frame)
+}
+
+function filt() {
+  const a = +$('thr').value, o = +$('off').value
+  $('mx').setAttribute('values', `1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 ${a} ${-o}`)
+  $('vThr').textContent = a; $('vOff').textContent = o
+}
+const show = (id, lab, div = 1, dp = 0) => { $(lab).textContent = (+$(id).value / div).toFixed(dp) }
+for (const [id, lab, div, dp] of [['slot','vSlot',1,0],['blur','vBlur',1,0],['size','vSize',1,0],
+                                  ['weight','vW',1,0],['ss','vSS',1,0],['down','vDown',100,2],['up','vUp',100,2]]) {
+  $(id).addEventListener('input', () => { show(id, lab, div, dp); layout() })
+  show(id, lab, div, dp)
+}
+$('thr').oninput = filt; $('off').oninput = filt
+$('words').oninput = layout
+filt(); layout(); requestAnimationFrame(frame)
+
+// Bakes the whole loop to disk, one frame at a time, as fast as the machine
+// manages - this runs once, offline, so it does not matter that it is slow.
+window.__hold = false; window.__done = 0; window.__total = 0
+window.__bake = async (fps, ss, scale) => {
+  const ssEl = $('ss'); ssEl.value = ss; ssEl.dispatchEvent(new Event('input'))
+  const sizeEl = $('size'); const baseSize = +sizeEl.value
+  if (scale !== 1) { sizeEl.value = Math.round(baseSize * scale); sizeEl.dispatchEvent(new Event('input')) }
+  const total = +$('slot').value * words.length
+  const n = Math.round(total / 1000 * fps)
+  window.__total = n; window.__done = 0
+  window.__hold = true; cancelAnimationFrame(window.__raf)
+  await new Promise(r => setTimeout(r, 120))
+  for (let i = 0; i < n; i++) {
+    frame(i * total / n)
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'))
+    await fetch('http://127.0.0.1:8800/f' + String(i).padStart(4, '0') + '.png', { method: 'POST', body: blob })
+    window.__done = i + 1
+  }
+  if (scale !== 1) { sizeEl.value = baseSize; sizeEl.dispatchEvent(new Event('input')) }
+  window.__hold = false; window.__raf = requestAnimationFrame(frame)
+  return n
+}
+</script>

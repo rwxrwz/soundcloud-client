@@ -1,17 +1,53 @@
-// Synced lyrics via LRCLIB (https://lrclib.net) — free, no API key.
+import { netGetText } from './net'
+
+// Keeps the existing call sites intact: they expect a fetch-like object with
+// ok/json(), while the transport underneath may be Rust.
+async function lrclibFetch(url: string, init?: { headers?: Record<string, string> }) {
+  const body = await netGetText(url, init?.headers)
+  return { ok: body !== null, json: async () => JSON.parse(body ?? 'null') }
+}
+
+// Synced lyrics via LRCLIB (https://lrclib.net) - free, no API key.
 
 export interface LyricLine { time: number; text: string }
 export interface LyricsResult {
   synced: LyricLine[] | null   // timestamped lines (preferred)
   plain: string | null         // fallback plain text
+  /* Transcribed from the audio rather than found in a catalogue. Carried so
+     the view can say so: a machine hearing a voice over a beat gets lines
+     wrong, and a wrong line presented as the official text is worse than no
+     text at all. */
+  ai?: boolean
+  /** Which model answered, for the line that says so. */
+  aiModel?: string
+  /** The words are a human's; only the timings came from the model. */
+  aiAligned?: boolean
+  /* Share of the lyrics the model actually recognised in the audio, 0..1.
+     The timings are only as good as this: on a clean recording it sits
+     near 1 and every line is where it belongs, on a muddy one it drops and
+     the lines between the recognised ones are evenly spaced guesses. Shown
+     rather than hidden, because the person can hear the difference and
+     deserves to know whether the player can. */
+  aiFit?: number
 }
 
 // Strip common SoundCloud title noise to improve matching
+/* Every dash a title might be split on, written as escapes on purpose.
+   Spelling them as characters put three literal hyphens in this class
+   once already - `[---]`, which is a range from hyphen to hyphen plus a
+   hyphen, so it matched the ASCII one and nothing else. Every upload
+   named "Artist <em dash> Title" then went to Genius with the artist
+   still glued to the title, and no hit could match it. Escapes cannot be
+   flattened by anything that rewrites dashes in source. */
+const DASH = '\\u002d\\u2010-\\u2015\\u2212'
+const DASHES = new RegExp(`\\s*[${DASH}]\\s*`, 'g')
+const ARTIST_DASH_TITLE = new RegExp(`^\\s*(.+?)\\s+[${DASH}]\\s+(.+)$`)
+
 export function cleanTitle(title: string): string {
   return title
     .replace(/\(.*?\)|\[.*?\]/g, '')                 // (prod. X), [Free]
     .replace(/\b(prod\.?|feat\.?|ft\.?)\b.*$/i, '')  // prod/feat tails
-    .replace(/\s*[-–—]\s*/g, ' ')                    // dashes
+    .replace(DASHES, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -32,10 +68,21 @@ function parseLRC(lrc: string): LyricLine[] {
   return lines.sort((a, b) => a.time - b.time)
 }
 
+/* Raised when the lookup never happened - the network was down, the
+   request timed out, LRCLIB was unreachable. Distinct from "answered, and
+   does not have it", because the two used to be the same `null` and the
+   caller wrote that null to disk as a permanent "this track has no
+   lyrics": a flaky connection silently condemned every track it touched,
+   the fresh-only scan then skipped them forever, and only wiping every
+   result could undo it. */
+export class LyricsUnreachable extends Error {
+  constructor() { super('LYRICS_UNREACHABLE'); this.name = 'LyricsUnreachable' }
+}
+
 async function tryGet(params: Record<string, string>): Promise<LyricsResult | null> {
   const qs = new URLSearchParams(params).toString()
   try {
-    const res = await fetch(`https://lrclib.net/api/get?${qs}`, {
+    const res = await lrclibFetch(`https://lrclib.net/api/get?${qs}`, {
       headers: { 'Lrclib-Client': 'SoundCloud Desktop Player (electron)' }
     })
     if (!res.ok) return null
@@ -43,19 +90,31 @@ async function tryGet(params: Record<string, string>): Promise<LyricsResult | nu
     if (data.syncedLyrics) return { synced: parseLRC(data.syncedLyrics), plain: data.plainLyrics ?? null }
     if (data.plainLyrics) return { synced: null, plain: data.plainLyrics }
     return null
-  } catch {
-    return null
+  } catch (e) {
+    // A 404 is an answer and was already returned above; reaching here
+    // means the request itself failed.
+    throw e instanceof LyricsUnreachable ? e : new LyricsUnreachable()
   }
 }
 
 // Cache results by track id to avoid refetching (and to power the "L" badge)
 const resultCache = new Map<number, LyricsResult | null>()
 
-export function getCachedLyrics(trackId: number): LyricsResult | null | undefined {
-  return resultCache.get(trackId)
+
+/** Put a result in by hand - used by the transcriber, so a transcript lands
+ *  in the same place a catalogue hit would and every view picks it up. */
+export function primeLyricsCache(trackId: number, result: LyricsResult | null) {
+  resultCache.set(trackId, result)
 }
 
 // Check many tracks for lyrics availability with limited concurrency.
+/** Drop everything this window remembers about a track's lyrics. The
+ *  files are the main process's business; these are the copies kept here
+ *  so the views do not re-ask on every render. */
+export function forgetTrackLyrics(trackId: number): void {
+  resultCache.delete(trackId)
+}
+
 export async function checkTracksLyrics(
   tracks: Array<{ id: number; title: string; duration: number; user?: { username?: string } }>,
   mark: (id: number, has: boolean) => void,
@@ -85,6 +144,9 @@ export async function fetchLyrics(opts: {
   if (trackId !== undefined && resultCache.has(trackId)) {
     return resultCache.get(trackId) ?? null
   }
+  /* Only an answer is remembered. A failed lookup must not become a
+     cached "no", here or on disk - it is a fact about the minute, not
+     about the track. */
   const result = await fetchUncached(artist, opts.title, durationSec)
   if (trackId !== undefined) resultCache.set(trackId, result)
   return result
@@ -109,7 +171,7 @@ const MAX_QUERIES = 3
 // uploader's later tracks. Session-scoped, like resultCache.
 const uploaderAliases = new Map<string, Set<string>>()
 // Uploaders we've already probed (searched by uploader name alone) to discover
-// their collaborator aliases — so we probe each at most once per session.
+// their collaborator aliases - so we probe each at most once per session.
 const probedUploaders = new Set<string>()
 
 export function norm(s: string): string {
@@ -118,7 +180,7 @@ export function norm(s: string): string {
 
 // "Artist - Title" → { artist, title }. SoundCloud titles often embed the artist.
 export function splitArtistTitle(raw: string): { artist?: string; title: string } {
-  const m = raw.match(/^\s*(.+?)\s+[-–—]\s+(.+)$/)
+  const m = raw.match(ARTIST_DASH_TITLE)
   if (m) return { artist: m[1].trim(), title: m[2].trim() }
   return { title: raw }
 }
@@ -168,7 +230,7 @@ function distinctiveTokens(s: string): Set<string> {
 
 // After a confirmed match, remember collaborator names credited on LRCLIB so the
 // same uploader's other tracks can be found by them. Only learn when the matched
-// credit shares a distinctive token with the SoundCloud artist — otherwise the
+// credit shares a distinctive token with the SoundCloud artist - otherwise the
 // match is too weak to trust as an alias source.
 function learnAliases(uploaderKey: string, scArtists: string[], creditName: string): void {
   if (!creditName) return
@@ -192,7 +254,7 @@ async function fetchUncached(username: string, rawTitle: string, durationSec: nu
   // Candidate artist names to try (parsed from title first, then uploader)
   const artists = [parsed.artist, username].filter(Boolean).map(a => cleanTitle(a as string))
 
-  // 1) Exact get for each candidate artist — LRCLIB matches duration tightly here
+  // 1) Exact get for each candidate artist - LRCLIB matches duration tightly here
   for (const a of artists) {
     const r = await tryGet({ artist_name: a, track_name: title, duration: String(dur) })
     if (r) return r
@@ -205,17 +267,19 @@ async function fetchUncached(username: string, rawTitle: string, durationSec: nu
   type Entry = { trackName?: string; artistName?: string; syncedLyrics?: string; plainLyrics?: string; duration?: number; id?: number }
   const searchGet = async (params: Record<string, string>): Promise<Entry[]> => {
     try {
-      const res = await fetch(`https://lrclib.net/api/search?${new URLSearchParams(params).toString()}`)
+      const res = await lrclibFetch(`https://lrclib.net/api/search?${new URLSearchParams(params).toString()}`)
       if (!res.ok) return []
       const arr = await res.json() as Entry[]
       return Array.isArray(arr) ? arr : []
-    } catch { return [] }
+    } catch (e) {
+      throw e instanceof LyricsUnreachable ? e : new LyricsUnreachable()
+    }
   }
   const uploaderKey = norm(username)
 
   // Run the searches with whatever aliases are currently known and return the
   // best candidate. Accept a candidate when: the artist lines up (exact/alias)
-  // within a generous duration gap, OR — for an artist-biased hit — the title is
+  // within a generous duration gap, OR - for an artist-biased hit - the title is
   // exact and the length nearly identical (a trustworthy "same recording"
   // fingerprint). Anything else is dropped: better no lyrics than wrong lyrics.
   const pickBest = async (): Promise<Entry | null> => {
